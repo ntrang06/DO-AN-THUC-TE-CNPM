@@ -31,7 +31,7 @@ jobs:
           packages: 'platform-tools'
 
       - name: Install Android SDK Platform 37
-        run: sdkmanager "platforms;android-37"
+        run: sdkmanager "platforms;android-37.0"
 
       - name: Build debug APK
         run: bash ./gradlew :app:assembleDebug --stacktrace
