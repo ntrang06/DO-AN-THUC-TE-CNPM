@@ -13,16 +13,29 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.example.dattcnpm.data.mock.MockDoseAction
-import com.example.dattcnpm.data.mock.MockDoseActions
-import com.example.dattcnpm.data.mock.MockReminderDoses
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.font.FontWeight
+import com.example.dattcnpm.data.model.UserProfileManager
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-
+import com.example.dattcnpm.data.mock.MockDoseAction
+import com.example.dattcnpm.data.mock.MockDoseActions
+import com.example.dattcnpm.data.mock.MockReminderDoses
+import androidx.compose.foundation.layout.size
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
@@ -32,12 +45,11 @@ fun HomeScreen(
 ) {
     val doses = MockReminderDoses.doses
 
-    // Trạng thái từ dữ liệu mẫu dùng chung.
+    // Giữ nguyên cách đọc trạng thái liều thuốc.
     fun actionFor(doseId: String): MockDoseAction? {
         return MockDoseActions.get(doseId)?.action
     }
 
-    // Chọn liều chưa uống và chưa bỏ qua theo thứ tự dữ liệu mẫu.
     val nextDose = doses.firstOrNull { dose ->
         val action = actionFor(dose.doseId)
 
@@ -93,20 +105,34 @@ fun HomeScreen(
         .format(Calendar.getInstance().time)
         .replaceFirstChar { it.titlecase() }
 
+    val greetingText = when (
+        Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    ) {
+        in 5..11 -> "Chào buổi sáng"
+        in 12..17 -> "Chào buổi chiều"
+        else -> "Chào buổi tối"
+    }
+
+    val displayName = UserProfileManager.name
+        .trim()
+        .ifBlank { "bạn" }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
         HomeHeader(
-            greeting = "Chào buổi sáng, cô Lan",
+            greeting = "$greetingText, $displayName",
             dateText = todayText,
-            initials = "L",
-            avatarBitmap = null,
+            initials = UserProfileManager.getInitials(),
+            avatarBitmap = UserProfileManager.currentAvatarBitmap,
             onNotificationsClick = {
-                // Chờ ghép giao diện thông báo.
+                // Chờ ghép phần thông báo của nhóm.
             },
-            onAccountClick = onAccountClick
+            onAccountClick = {
+                onAccountClick()
+            }
         )
 
         Column(
@@ -171,7 +197,6 @@ fun HomeScreen(
                 takenDoses = takenCount,
                 totalDoses = todayDoses.size,
                 skippedDoses = skippedCount,
-                // Số minh họa cho giao diện, chưa tính từ giờ uống thực tế.
                 onTimeDoses = 1
             )
 
