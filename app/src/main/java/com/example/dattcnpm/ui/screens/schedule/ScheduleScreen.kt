@@ -31,12 +31,14 @@ import com.example.dattcnpm.data.mock.MockReminderDoses
 import com.example.dattcnpm.ui.screens.reminder.ReminderDoseUiModel
 
 @Composable
-fun ScheduleScreen(modifier: Modifier = Modifier) {
+fun ScheduleScreen(
+    modifier: Modifier = Modifier,
+    onDoseClick: (String) -> Unit
+) {
     var selectedDay by rememberSaveable {
         mutableLongStateOf(MockCalendar.today())
     }
 
-    // Đọc lại khi dữ liệu thuốc thay đổi, kể cả khi vẫn đang xem cùng ngày.
     val doses = MockReminderDoses.forDate(selectedDay)
     val isToday = selectedDay == MockCalendar.today()
 
@@ -94,7 +96,9 @@ fun ScheduleScreen(modifier: Modifier = Modifier) {
         )
 
         LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
             contentPadding = PaddingValues(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -110,7 +114,8 @@ fun ScheduleScreen(modifier: Modifier = Modifier) {
                 items(doses, key = { it.doseId }) { dose ->
                     ScheduleDoseItem(
                         dose = dose,
-                        action = MockDoseActions.get(dose.doseId)?.action
+                        action = MockDoseActions.get(dose.doseId)?.action,
+                        onClick = { onDoseClick(dose.doseId) }
                     )
                 }
             }
@@ -121,7 +126,8 @@ fun ScheduleScreen(modifier: Modifier = Modifier) {
 @Composable
 private fun ScheduleDoseItem(
     dose: ReminderDoseUiModel,
-    action: MockDoseAction?
+    action: MockDoseAction?,
+    onClick: () -> Unit
 ) {
     val status = when (action) {
         MockDoseAction.TAKEN -> "Đã uống"
@@ -131,6 +137,7 @@ private fun ScheduleDoseItem(
     }
 
     Surface(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
