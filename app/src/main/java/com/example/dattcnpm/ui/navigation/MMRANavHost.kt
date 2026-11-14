@@ -47,6 +47,7 @@ import com.example.dattcnpm.ui.screens.account.NotificationSettingsScreen
 import com.example.dattcnpm.ui.screens.account.AccessibilitySettingsScreen
 import com.example.dattcnpm.ui.screens.account.VoiceGuidanceSettingsScreen
 import com.example.dattcnpm.ui.screens.account.ManageUsageModeScreen
+import com.example.dattcnpm.ui.screens.medicine.MedicineScreen
 
 @Composable
 fun MMRANavHost(
@@ -289,6 +290,11 @@ fun MMRANavHost(
         }
         composable(MMRADestinations.HOME) {
             HomeScreen(
+                onViewAllClick = {
+                    navController.navigate(MMRADestinations.SCHEDULE) {
+                        launchSingleTop = true
+                    }
+                },
                 onAccountClick = {
                     navController.navigate(MMRADestinations.MY_ACCOUNT) {
                         launchSingleTop = true
@@ -297,7 +303,7 @@ fun MMRANavHost(
             )
         }
         composable(MMRADestinations.MEDICINE) {
-            PlaceholderScreen(title = "Thuốc")
+            MedicineScreen()
         }
         composable(MMRADestinations.SCHEDULE) {
             PlaceholderScreen(title = "Lịch uống")
