@@ -28,14 +28,16 @@ import com.example.dattcnpm.data.mock.MockMedicineSchedule
 import com.example.dattcnpm.data.mock.MockMedicines
 import com.example.dattcnpm.data.mock.isPositiveDoseQuantity
 
+
 @Composable
 fun ManualMedicineScreen(
-    medicineId: String,
+    medicineId: String?,
     onClose: () -> Unit
 ) {
+    val isNew = medicineId == null
     val medicine = MockMedicines.findById(medicineId)
 
-    if (medicine == null) {
+    if (!isNew && medicine == null) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text("Không tìm thấy thuốc cần sửa.")
             TextButton(onClick = onClose) { Text("Quay lại") }
@@ -43,8 +45,14 @@ fun ManualMedicineScreen(
         return
     }
 
-    val original = medicine.draft()
-    val schedule = medicine.schedule
+    val original = medicine?.draft() ?: ManualMedicineDraft(
+        medicineName = "",
+        strength = "",
+        strengthUnit = "mg",
+        dosageForm = "",
+        note = ""
+    )
+    val schedule = medicine?.schedule
 
     var editingSchedule by rememberSaveable(medicineId) { mutableStateOf(false) }
     var name by rememberSaveable(medicineId) { mutableStateOf(original.medicineName) }
@@ -89,7 +97,12 @@ fun ManualMedicineScreen(
         TextButton(onClick = back) { Text("Quay lại") }
 
         Text(
-            text = if (editingSchedule) "Chỉnh lịch uống" else "Chỉnh sửa thuốc",
+            text = when {
+                editingSchedule && isNew -> "Thiết lập lịch uống"
+                editingSchedule -> "Chỉnh lịch uống"
+                isNew -> "Thêm thuốc"
+                else -> "Chỉnh sửa thuốc"
+            },
             style = MaterialTheme.typography.headlineSmall
         )
 

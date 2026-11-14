@@ -18,11 +18,15 @@ import com.example.dattcnpm.data.mock.MockCalendar
 import com.example.dattcnpm.data.mock.MockMedicines
 import com.example.dattcnpm.ui.components.MMRASearchField
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Button
+
 
 @Composable
 fun MedicineScreen(
     modifier: Modifier = Modifier,
-    onMedicineClick: (String) -> Unit
+    onMedicineClick: (String) -> Unit,
+    onAddMedicineClick: () -> Unit
 ) {
     var searchText by rememberSaveable { mutableStateOf("") }
 
@@ -40,7 +44,14 @@ fun MedicineScreen(
         item {
             MedicineHeader(medicineCount = medicines.size)
         }
-
+        item {
+            Button(
+                onClick = onAddMedicineClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Thêm thuốc")
+            }
+        }
         item {
             MMRASearchField(
                 value = searchText,

@@ -312,7 +312,19 @@ fun MMRANavHost(
                     navController.navigate("medicine/edit/${Uri.encode(medicineId)}") {
                         launchSingleTop = true
                     }
+                },
+                onAddMedicineClick = {
+                    navController.navigate(MMRADestinations.MANUAL_MEDICINE) {
+                        launchSingleTop = true
+                    }
                 }
+            )
+        }
+
+        composable(MMRADestinations.MANUAL_MEDICINE) {
+            ManualMedicineScreen(
+                medicineId = null,
+                onClose = { navController.popBackStack() }
             )
         }
 
