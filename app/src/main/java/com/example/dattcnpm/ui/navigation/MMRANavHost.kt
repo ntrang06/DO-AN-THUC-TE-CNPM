@@ -52,6 +52,7 @@ import android.net.Uri
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import com.example.dattcnpm.ui.screens.medicine.ManualMedicineScreen
+import com.example.dattcnpm.ui.screens.schedule.ScheduleScreen
 
 @Composable
 fun MMRANavHost(
@@ -338,7 +339,7 @@ fun MMRANavHost(
             )
         }
         composable(MMRADestinations.SCHEDULE) {
-            PlaceholderScreen(title = "Lịch uống")
+            ScheduleScreen()
         }
         composable(MMRADestinations.SCAN) {
             PlaceholderScreen(
