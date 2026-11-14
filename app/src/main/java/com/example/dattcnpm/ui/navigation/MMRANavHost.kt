@@ -48,6 +48,10 @@ import com.example.dattcnpm.ui.screens.account.AccessibilitySettingsScreen
 import com.example.dattcnpm.ui.screens.account.VoiceGuidanceSettingsScreen
 import com.example.dattcnpm.ui.screens.account.ManageUsageModeScreen
 import com.example.dattcnpm.ui.screens.medicine.MedicineScreen
+import android.net.Uri
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import com.example.dattcnpm.ui.screens.medicine.ManualMedicineScreen
 
 @Composable
 fun MMRANavHost(
@@ -303,7 +307,23 @@ fun MMRANavHost(
             )
         }
         composable(MMRADestinations.MEDICINE) {
-            MedicineScreen()
+            MedicineScreen(
+                onMedicineClick = { medicineId ->
+                    navController.navigate("medicine/edit/${Uri.encode(medicineId)}") {
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(
+            route = MMRADestinations.EDIT_MEDICINE,
+            arguments = listOf(navArgument("medicineId") { type = NavType.StringType })
+        ) { entry ->
+            ManualMedicineScreen(
+                medicineId = entry.arguments?.getString("medicineId").orEmpty(),
+                onClose = { navController.popBackStack() }
+            )
         }
         composable(MMRADestinations.SCHEDULE) {
             PlaceholderScreen(title = "Lịch uống")

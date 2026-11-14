@@ -17,9 +17,13 @@ import androidx.compose.ui.unit.dp
 import com.example.dattcnpm.data.mock.MockCalendar
 import com.example.dattcnpm.data.mock.MockMedicines
 import com.example.dattcnpm.ui.components.MMRASearchField
+import androidx.compose.foundation.clickable
 
 @Composable
-fun MedicineScreen(modifier: Modifier = Modifier) {
+fun MedicineScreen(
+    modifier: Modifier = Modifier,
+    onMedicineClick: (String) -> Unit
+) {
     var searchText by rememberSaveable { mutableStateOf("") }
 
     val medicines = MockMedicines.medicines
@@ -63,6 +67,7 @@ fun MedicineScreen(modifier: Modifier = Modifier) {
                     .joinToString(", ") { MockCalendar.time(it) }
 
                 MedicineCard(
+                    modifier = Modifier.clickable { onMedicineClick(medicine.medicineId) },
                     medicineName = medicine.medicineName,
                     quantityText = schedule?.quantityText ?: medicine.quantityText,
                     scheduleText = if (times.isBlank()) {
