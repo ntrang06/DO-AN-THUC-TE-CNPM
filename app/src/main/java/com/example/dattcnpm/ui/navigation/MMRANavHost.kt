@@ -254,70 +254,16 @@ fun MMRANavHost(
             )
         }
 
-        composable(MMRADestinations.MEDICINE) {
-            MedicineScreen(
-                onMedicineClick = { medicineId ->
-                    navController.navigate("medicine/edit/${Uri.encode(medicineId)}") {
-                        launchSingleTop = true
-                    }
-                },
-                onAddMedicineClick = {
-                    navController.navigate(MMRADestinations.MANUAL_MEDICINE) {
-                        launchSingleTop = true
-                    }
-                }
-            )
-        }
+        personalMedicationRoutes(navController, context)
 
-        composable(MMRADestinations.MANUAL_MEDICINE) {
-            ManualMedicineScreen(
-                medicineId = null,
-                onClose = goBack
-            )
-        }
 
-        composable(
-            route = MMRADestinations.EDIT_MEDICINE,
-            arguments = listOf(
-                navArgument("medicineId") { type = NavType.StringType }
-            )
-        ) { entry ->
-            ManualMedicineScreen(
-                medicineId = entry.arguments?.getString("medicineId").orEmpty(),
-                onClose = goBack
-            )
-        }
 
-        composable(MMRADestinations.SCHEDULE) {
-            ScheduleScreen(onDoseClick = openDose)
-        }
 
-        composable(
-            route = MMRADestinations.REMINDER,
-            arguments = listOf(
-                navArgument("doseId") {
-                    type = NavType.StringType
-                },
-                navArgument("readOnly") {
-                    type = NavType.BoolType
-                    defaultValue = false
-                }
-            )
-        ) { entry ->
-            DoseReminderScreen(
-                doseId = entry.arguments?.getString("doseId"),
-                readOnly = entry.arguments?.getBoolean("readOnly") ?: false,
-                onBack = goBack
-            )
-        }
 
         composable(MMRADestinations.SCAN) {
             PlaceholderScreen("Quét thuốc", "Quay lại", goBack)
         }
 
-        composable(MMRADestinations.HISTORY) {
-            PlaceholderScreen("Lịch sử")
-        }
 
         composable(MMRADestinations.FAMILY) {
             PlaceholderScreen("Gia đình")

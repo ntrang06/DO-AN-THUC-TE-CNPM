@@ -1,183 +1,191 @@
 package com.example.dattcnpm.ui.screens.schedule
 
-import androidx.compose.foundation.BorderStroke
+import android.app.DatePickerDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.dattcnpm.data.model.UserProfileManager
 import com.example.dattcnpm.data.mock.MockCalendar
 import com.example.dattcnpm.data.mock.MockDoseAction
 import com.example.dattcnpm.data.mock.MockDoseActions
 import com.example.dattcnpm.data.mock.MockReminderDoses
-import com.example.dattcnpm.ui.screens.reminder.ReminderDoseUiModel
+import com.example.dattcnpm.ui.theme.MMRATheme
+import java.util.Calendar
 
 @Composable
 fun ScheduleScreen(
     modifier: Modifier = Modifier,
-    onDoseClick: (String) -> Unit
+    onDoseClick: (String) -> Unit = {},
+    onAccountClick: () -> Unit = {}
 ) {
-    var selectedDay by rememberSaveable {
-        mutableLongStateOf(MockCalendar.today())
+    val context = LocalContext.current
+    val now = System.currentTimeMillis()
+    val todayMillis = MockCalendar.day(now)
+
+    var selectedDateMillis by rememberSaveable {
+        mutableStateOf(todayMillis)
     }
 
-    val doses = MockReminderDoses.forDate(selectedDay)
-    val isToday = selectedDay == MockCalendar.today()
+    val doses = MockReminderDoses
+        .forDate(selectedDateMillis)
+        .map { dose ->
+            val status = when (
+                MockDoseActions.get(dose.doseId)?.action
+            ) {
+                MockDoseAction.TAKEN ->
+                    ScheduleDoseStatus.TAKEN
+
+                MockDoseAction.SNOOZED ->
+                    ScheduleDoseStatus.SNOOZED
+
+                MockDoseAction.SKIPPED ->
+                    ScheduleDoseStatus.SKIPPED
+
+                null -> {
+                    // Quy ước mô phỏng FE: quá 10 phút chưa xác nhận.
+                    if (dose.scheduledAtMillis + 600_000L < now) {
+                        ScheduleDoseStatus.OVERDUE
+                    } else {
+                        ScheduleDoseStatus.PENDING
+                    }
+                }
+            }
+
+            ScheduleDoseUiModel(
+                doseId = dose.doseId,
+                medicineId = dose.medicineId,
+                time = dose.timeLabel.substringBefore(" •"),
+                medicineName = dose.medicineName,
+                quantityText = dose.quantityText,
+                instruction = dose.mealInstruction,
+                status = status
+            )
+        }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp)
+            .verticalScroll(rememberScrollState())
     ) {
-        Text(
-            text = "Lịch uống",
-            modifier = Modifier.padding(top = 16.dp),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
+        ScheduleHeader(
+            initials = UserProfileManager.getInitials(),
+            onCalendarClick = {
+                val selectedDate = Calendar.getInstance().apply {
+                    timeInMillis = selectedDateMillis
+                }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(
-                onClick = { selectedDay = MockCalendar.plusDays(selectedDay, -1) }
-            ) {
-                Text("Ngày trước")
-            }
-
-            TextButton(
-                onClick = { selectedDay = MockCalendar.today() },
-                enabled = !isToday
-            ) {
-                Text("Hôm nay")
-            }
-
-            TextButton(
-                onClick = { selectedDay = MockCalendar.plusDays(selectedDay, 1) }
-            ) {
-                Text("Ngày sau")
-            }
-        }
-
-        Text(
-            text = if (isToday) {
-                "Hôm nay • ${MockCalendar.date(selectedDay)}"
-            } else {
-                MockCalendar.date(selectedDay)
+                DatePickerDialog(
+                    context,
+                    { _, year, month, day ->
+                        selectedDateMillis =
+                            Calendar.getInstance().apply {
+                                clear()
+                                set(year, month, day, 12, 0, 0)
+                            }.timeInMillis
+                    },
+                    selectedDate.get(Calendar.YEAR),
+                    selectedDate.get(Calendar.MONTH),
+                    selectedDate.get(Calendar.DAY_OF_MONTH)
+                ).show()
             },
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
+            onAccountClick = onAccountClick
         )
 
-        Text(
-            text = "${doses.size} liều trong ngày",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentPadding = PaddingValues(vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+        Column(
+            modifier = Modifier.padding(
+                start = 20.dp,
+                top = 6.dp,
+                end = 20.dp,
+                bottom = 14.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            if (doses.isEmpty()) {
-                item {
+            ScheduleWeekPicker(
+                selectedDateMillis = selectedDateMillis,
+                todayMillis = todayMillis,
+                onDateSelected = {
+                    selectedDateMillis = it
+                }
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${doses.size} liều thuốc",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 17.sp,
+                        lineHeight = 22.sp,
+                        letterSpacing = 0.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = Color(0xFF102A2A)
+                )
+
+                if (doses.isNotEmpty()) {
                     Text(
-                        text = "Không có lịch uống thuốc trong ngày này.",
-                        modifier = Modifier.padding(vertical = 12.dp),
-                        style = MaterialTheme.typography.bodyMedium
+                        text = "Chạm để xem chi tiết",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            letterSpacing = 0.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = Color(0xFF126B62)
                     )
                 }
+            }
+
+            if (doses.isEmpty()) {
+                Text(
+                    text = "Chưa có lịch uống thuốc cho ngày này.",
+                    modifier = Modifier.padding(vertical = 16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF526565)
+                )
             } else {
-                items(doses, key = { it.doseId }) { dose ->
-                    ScheduleDoseItem(
-                        dose = dose,
-                        action = MockDoseActions.get(dose.doseId)?.action,
-                        onClick = { onDoseClick(dose.doseId) }
-                    )
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    doses.forEach { dose ->
+                        ScheduleDoseCard(
+                            dose = dose,
+                            onClick = onDoseClick
+                        )
+                    }
                 }
             }
         }
     }
 }
 
+@Preview(showBackground = true, widthDp = 390)
 @Composable
-private fun ScheduleDoseItem(
-    dose: ReminderDoseUiModel,
-    action: MockDoseAction?,
-    onClick: () -> Unit
-) {
-    val status = when (action) {
-        MockDoseAction.TAKEN -> "Đã uống"
-        MockDoseAction.SKIPPED -> "Đã bỏ qua"
-        MockDoseAction.SNOOZED -> "Nhắc lại"
-        null -> "Chưa ghi nhận"
-    }
-
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = dose.timeLabel.substringBefore(" •"),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                Text(
-                    text = status,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Text(
-                text = dose.medicineName,
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            Text(
-                text = listOf(dose.quantityText, dose.mealInstruction)
-                    .filter { it.isNotBlank() }
-                    .joinToString(" • "),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+private fun ScheduleScreenPreview() {
+    MMRATheme {
+        ScheduleScreen()
     }
 }
