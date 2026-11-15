@@ -31,10 +31,19 @@ private val FigmaBorder = Color(0xFFE2E8F0)
 private val FigmaWarningBg = Color(0xFFFEF3C7)
 private val FigmaWarningText = Color(0xFFB45309)
 
+// Thêm data class này ngay phía trên hàm ScanScreen (nếu chưa có trong package)
+data class ScanResult(
+    val medicineName: String = "",
+    val dosage: String = "",
+    val dosageForm: String = ""
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScanScreen(
-    onScanCaptured: () -> Unit,
+    onScanSuccess: (ScanResult) -> Unit = {},
+    onManualInputClick: () -> Unit = {},
+    onScanCaptured: () -> Unit = {}, // Thêm = {} để không bắt buộc truyền từ NavHost
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(1) } // 0: Thuốc của tôi, 1: Thuốc người thân
