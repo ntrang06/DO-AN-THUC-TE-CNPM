@@ -34,6 +34,7 @@ fun TodayProgressCard(
     val total = totalDoses.coerceAtLeast(0)
     val taken = takenDoses.coerceIn(0, total)
     val skipped = skippedDoses.coerceIn(0, total - taken)
+    val onTime = onTimeDoses.coerceIn(0, taken)
     val remaining = total - taken - skipped
 
     val title = when {
@@ -42,7 +43,6 @@ fun TodayProgressCard(
         remaining == 0 -> "Không còn liều chờ xử lý"
         else -> "Tiến độ uống thuốc hôm nay"
     }
-
     val description = when {
         total == 0 -> "Thêm lịch uống để theo dõi tại đây."
 
