@@ -227,7 +227,21 @@ private fun MedicineEntryDestination(
     }
 
     ManualMedicineScreen(
-        initialDraft = previous?.draft(),
+        initialDraft = previous?.draft() ?: entry.savedStateHandle
+            .get<android.os.Bundle>("scanPrefill")?.let { data ->
+                val dosage = data.getString("dosage").orEmpty().trim()
+                val parts = dosage.split(Regex("\\s+"), limit = 2)
+                val simple = parts.size == 2 &&
+                        parts[0].toDoubleOrNull() != null && "/" !in dosage
+
+                ManualMedicineDraft(
+                    medicineName = data.getString("name").orEmpty(),
+                    strength = if (simple) parts[0] else "",
+                    strengthUnit = if (simple) parts[1] else "mg",
+                    dosageForm = data.getString("form").orEmpty(),
+                    note = if (simple) "" else dosage
+                )
+            },
         onBackClick = {
             navController.popBackStack()
         },

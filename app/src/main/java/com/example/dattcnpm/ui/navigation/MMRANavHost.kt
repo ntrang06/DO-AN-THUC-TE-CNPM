@@ -37,6 +37,10 @@ import com.example.dattcnpm.ui.screens.reminder.DoseReminderScreen
 import com.example.dattcnpm.ui.screens.schedule.ScheduleScreen
 import com.example.dattcnpm.ui.screens.setup.SetupDisplayPreferenceScreen
 import com.example.dattcnpm.ui.screens.setup.SetupTargetUserScreen
+import com.example.dattcnpm.ui.screens.history.HistoryScreen
+import com.example.dattcnpm.ui.screens.family.ConnectFamilyScreen
+import com.example.dattcnpm.ui.screens.family.FamilyScreen
+import com.example.dattcnpm.ui.screens.family.RelativeTrackingScreen
 
 @Composable
 fun MMRANavHost(
@@ -261,12 +265,88 @@ fun MMRANavHost(
 
 
         composable(MMRADestinations.SCAN) {
-            PlaceholderScreen("Quét thuốc", "Quay lại", goBack)
+            com.example.dattcnpm.ui.screens.scan.ScanScreen(
+                onScanSuccess = { result ->
+                    navController.navigate(MMRADestinations.MANUAL_MEDICINE)
+                    navController.currentBackStackEntry?.savedStateHandle?.set(
+                        "scanPrefill",
+                        android.os.Bundle().apply {
+                            putString("name", result.medicineName)
+                            putString("dosage", result.dosage)
+                            putString("form", result.dosageForm)
+                        }
+                    )
+                },
+                onManualInputClick = {
+                    navController.navigate(MMRADestinations.MANUAL_MEDICINE)
+                }
+            )
         }
 
 
         composable(MMRADestinations.FAMILY) {
-            PlaceholderScreen("Gia đình")
+            FamilyScreen(
+                onConnectClick = {
+                    navController.navigate(MMRADestinations.FAMILY_INVITE) {
+                        launchSingleTop = true
+                    }
+                },
+                onMemberClick = { memberId ->
+                    navController.navigate(
+                        MMRADestinations.familyMemberDetail(android.net.Uri.encode(memberId))
+                    ) {
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(MMRADestinations.FAMILY_MEMBER_DETAIL) { entry ->
+            val memberId = entry.arguments?.getString("memberId")
+
+            if (memberId != null) {
+                RelativeTrackingScreen(
+                    memberId = memberId,
+                    onBackClick = {
+                        navController.popBackStack()
+                    },
+                    onRemindClick = {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Bản thử giao diện: chưa gửi nhắc nhở đến người thân.",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                )
+            }
+        }
+
+        composable(MMRADestinations.FAMILY_INVITE) {
+            ConnectFamilyScreen(
+                onBackClick = {
+                    navController.popBackStack()
+                },
+                onScanQRClick = {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Chức năng quét mã kết nối chưa được tích hợp.",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                },
+                onSubmitCode = { code ->
+                    val message = if (code.equals("MMRA-8899", ignoreCase = true)) {
+                        "Đã nhận mã mẫu. Chưa tạo liên kết thật."
+                    } else {
+                        "Mã không khớp với mã mẫu."
+                    }
+
+                    android.widget.Toast.makeText(
+                        context,
+                        message,
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            )
         }
 
         composable(MMRADestinations.ACCOUNT) {
