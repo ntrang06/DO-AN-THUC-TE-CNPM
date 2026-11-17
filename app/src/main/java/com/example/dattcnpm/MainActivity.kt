@@ -64,17 +64,13 @@ fun MMRAApp() {
                         )
                 ) {
                     MMRABottomBar(
-                        currentRoute = currentRoute,
-                        onItemClick = { route ->
+                        currentRoute = currentRoute ?: "",
+                        onTabSelected = { route ->
                             if (route != currentRoute) {
                                 navController.navigate(route) {
-                                    popUpTo(
-                                        navController.graph
-                                            .findStartDestination().id
-                                    ) {
+                                    popUpTo(navController.graph.startDestinationId) {
                                         saveState = true
                                     }
-
                                     launchSingleTop = true
                                     restoreState = true
                                 }

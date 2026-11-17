@@ -1,107 +1,93 @@
 package com.example.dattcnpm.ui.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dattcnpm.ui.navigation.mmraBottomNavItems
+import com.example.dattcnpm.R
 
 @Composable
 fun MMRABottomBar(
-    currentRoute: String?,
-    onItemClick: (String) -> Unit,
-    modifier: Modifier = Modifier
+    currentRoute: String,
+    onTabSelected: (String) -> Unit,
 ) {
+    val items = listOf(
+        BottomNavItem("Trang chủ", "home", R.drawable.home),
+        BottomNavItem("Thuốc", "medicine", R.drawable.ic_pill),
+        BottomNavItem("Lịch uống", "schedule", R.drawable.ic_calendar),
+        BottomNavItem("Quét thuốc", "scan", R.drawable.scan),
+        BottomNavItem("Lịch sử", "history", R.drawable.history),
+        BottomNavItem("Gia đình", "family", R.drawable.family),
+    )
+
     Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(30.dp),
+        modifier = Modifier.fillMaxWidth(),
         color = Color.White,
-        border = BorderStroke(1.dp, Color(0xFFD7E2DF))
+        shadowElevation = 8.dp,
     ) {
         Row(
             modifier = Modifier
-                .selectableGroup()
-                .heightIn(min = 72.dp)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            mmraBottomNavItems.forEach { item ->
-                val selected = currentRoute == item.route
-                val contentColor = if (selected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    Color(0xFF526565)
-                }
+            items.forEach { (title, route, iconRes) ->
+                val selected = currentRoute == route
+                val contentColor = if (selected) Color(0xFF0F5145) else Color(0xFF64748B)
 
-                Column(
+                Box(
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(20.dp))
                         .background(
-                            if (selected) Color(0xFFD9EEEA)
-                            else Color.Transparent
+                            color = if (selected) Color(0xFFE6F4EA) else Color.Transparent,
                         )
-                        .selectable(
-                            selected = selected,
-                            role = Role.Tab,
-                            onClick = { onItemClick(item.route) }
-                        )
-                        .heightIn(min = 56.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(
-                        3.dp,
-                        Alignment.CenterVertically
-                    )
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onTabSelected(route) }
+                        .padding(vertical = 8.dp, horizontal = 2.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        painter = painterResource(item.iconRes),
-                        contentDescription = null,
-                        tint = contentColor,
-                        modifier = Modifier.size(21.dp)
-                    )
-
-                    Text(
-                        text = item.label,
-                        style = MaterialTheme.typography.labelSmall.copy(
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(id = iconRes),
+                            contentDescription = title,
+                            tint = contentColor,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Text(
+                            text = title,
                             fontSize = 10.sp,
-                            lineHeight = 13.sp,
-                            letterSpacing = 0.sp,
-                            fontWeight = if (selected) {
-                                FontWeight.Bold
-                            } else {
-                                FontWeight.Medium
-                            }
-                        ),
-                        color = contentColor,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1
-                    )
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            color = contentColor,
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+data class BottomNavItem(
+    val title: String,
+    val route: String,
+    val iconRes: Int,
+)
