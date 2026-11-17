@@ -306,6 +306,7 @@ fun MMRANavHost(
 
             if (memberId != null) {
                 RelativeTrackingScreen(
+                    navController = navController, // <--- Thêm dòng này vào đây
                     memberId = memberId,
                     onBackClick = {
                         navController.popBackStack()
