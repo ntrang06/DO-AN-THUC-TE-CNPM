@@ -2,430 +2,379 @@ package com.example.dattcnpm.ui.screens.scan
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Medication
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.dattcnpm.R
 
 @Composable
 fun ScanResultScreen(
-    modifier: Modifier = Modifier,
-    onBackClick: () -> Unit = {},
-    onRescanClick: () -> Unit = {},
-    onConfirmClick: () -> Unit = {}
+    scanResult: ScanResult,
+    onRescanClick: () -> Unit,
+    onConfirmClick: (ScanResult) -> Unit,
+    onBackClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    var medicineName by rememberSaveable(scanResult.medicineName) {
+        mutableStateOf(scanResult.medicineName)
+    }
+
+    var dosage by rememberSaveable(scanResult.dosage) {
+        mutableStateOf(scanResult.dosage)
+    }
+
+    var dosageForm by rememberSaveable(scanResult.dosageForm) {
+        mutableStateOf(scanResult.dosageForm)
+    }
+
+    var editingField by rememberSaveable {
+        mutableStateOf<String?>(null)
+    }
+
+    var editingValue by rememberSaveable {
+        mutableStateOf("")
+    }
+
+    fun edit(label: String, value: String) {
+        editingField = label
+        editingValue = value
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFF8FAFC))
-            .verticalScroll(rememberScrollState())
-            .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(Color(0xFFF6FAF9))
     ) {
-        // --- TOP BAR ---
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
+            Surface(
                 onClick = onBackClick,
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(Color(0xFFEFF3F5), CircleShape)
+                modifier = Modifier.size(44.dp),
+                shape = CircleShape,
+                color = Color(0xFFE8F2F0)
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_chevron_left),
-                    contentDescription = "Quay lại",
-                    tint = Color(0xFF0F172A),
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = "Kiểm tra thuốc",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF0F172A)
-                )
-                Text(
-                    text = "Bước 2 / 3 • Xác nhận kết quả",
-                    fontSize = 14.sp,
-                    color = Color(0xFF64748B)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // --- THẺ GỢI Ý NHẬN DIỆN ---
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBEB)),
-            border = BorderStroke(1.dp, Color(0xFFFDE68A)),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_sparkles),
-                    contentDescription = null,
-                    tint = Color(0xFFD97706),
-                    modifier = Modifier.size(22.dp)
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Gợi ý nhận diện — chưa phải tư vấn y tế",
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F172A),
-                        fontSize = 15.sp
-                    )
-                    Text(
-                        text = "Hãy đối chiếu với vỏ hộp, đơn thuốc hoặc dược sĩ trước khi xác nhận.",
-                        color = Color(0xFF64748B),
-                        fontSize = 14.sp,
-                        lineHeight = 18.sp
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Quay lại",
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
+
+            Spacer(Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Kiểm tra thuốc",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "Kiểm tra thông tin trước khi tiếp tục",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF6B7280)
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // --- THẺ THÔNG TIN KẾT QUẢ CHÍNH ---
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFFFFF7ED),
+                border = BorderStroke(1.dp, Color(0xFFFED7AA))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Dữ liệu minh họa để kiểm thử giao diện",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF9A3412)
+                    )
+
+                    Text(
+                        text = "Thông tin dưới đây không được nhận diện " +
+                                "từ ảnh bạn vừa chọn. Bạn có thể sửa các " +
+                                "trường để kiểm tra luồng nhập thuốc.",
+                        color = Color(0xFFC2410C),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White,
+                border = BorderStroke(1.dp, Color(0xFFE2ECEA))
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    modifier = Modifier.padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Hình minh họa thuốc M500
                     Surface(
-                        modifier = Modifier.size(76.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        color = Color(0xFFEFF6FF),
-                        border = BorderStroke(1.5.dp, Color(0xFF2563EB))
+                        modifier = Modifier.size(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFFF0F7F5),
+                        border = BorderStroke(1.dp, Color(0xFFB1D4CC))
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_pill),
-                                    contentDescription = null,
-                                    tint = Color(0xFF2563EB),
-                                    modifier = Modifier.size(28.dp)
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "M500",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2563EB)
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Medication,
+                                contentDescription = null,
+                                tint = Color(0xFF126B62),
+                                modifier = Modifier.size(28.dp)
+                            )
                         }
                     }
+
+                    Spacer(Modifier.width(14.dp))
 
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Badge Khớp cao
                         Surface(
-                            shape = RoundedCornerShape(50),
-                            color = Color(0xFFEFF6FF)
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFDDF2EE)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_scan),
-                                    contentDescription = null,
-                                    tint = Color(0xFF2563EB),
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = "KHỚP CAO • 92%",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2563EB)
-                                )
-                            }
+                            Text(
+                                text = "BẢN THỬ GIAO DIỆN",
+                                modifier = Modifier.padding(
+                                    horizontal = 8.dp,
+                                    vertical = 4.dp
+                                ),
+                                color = Color(0xFF126B62),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
 
                         Text(
-                            text = "Metformin 500 mg",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0F172A)
+                            text = medicineName.ifBlank { "Chưa nhập tên thuốc" },
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
-                            text = "Viên nén bao phim • Màu trắng",
-                            fontSize = 14.sp,
-                            color = Color(0xFF64748B)
+                            text = listOf(dosage, dosageForm)
+                                .filter { it.isNotBlank() }
+                                .joinToString(" • "),
+                            color = Color(0xFF6B7280),
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
+            }
 
-                // Banner xanh lá đối chiếu cơ sở dữ liệu
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFFE6F4EA)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .background(Color(0xFF0F5145), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_shield_check),
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+            Text(
+                text = "Thông tin thuốc",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
 
-                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            Text(
-                                text = "Đã đối chiếu cơ sở dữ liệu tin cậy",
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0F5145),
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = "Cục Quản lý Dược • Cập nhật 09/2026",
-                                color = Color(0xFF15803D),
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White,
+                border = BorderStroke(1.dp, Color(0xFFE5E7EB))
+            ) {
+                Column {
+                    ScanEditableInfoRow(
+                        label = "Tên thuốc",
+                        value = medicineName,
+                        onClick = { edit("Tên thuốc", medicineName) }
+                    )
+
+                    HorizontalDivider(color = Color(0xFFF3F4F6))
+
+                    ScanEditableInfoRow(
+                        label = "Hàm lượng",
+                        value = dosage,
+                        onClick = { edit("Hàm lượng", dosage) }
+                    )
+
+                    HorizontalDivider(color = Color(0xFFF3F4F6))
+
+                    ScanEditableInfoRow(
+                        label = "Dạng thuốc",
+                        value = dosageForm,
+                        onClick = { edit("Dạng thuốc", dosageForm) }
+                    )
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // --- THÔNG TIN ĐỌC TỪ VỎ HỘP ---
-        Text(
-            text = "Thông tin đọc từ vỏ hộp",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF0F172A),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp)
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                ResultDetailItem(
-                    iconRes = R.drawable.ic_pill,
-                    label = "Hoạt chất",
-                    value = "Metformin hydrochloride"
-                )
-                HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
-                ResultDetailItem(
-                    iconRes = R.drawable.ic_factory,
-                    label = "Nhà sản xuất",
-                    value = "Mekophar"
-                )
-                HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
-                ResultDetailItem(
-                    iconRes = R.drawable.ic_package,
-                    label = "Quy cách",
-                    value = "Hộp 3 vỉ × 10 viên"
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFFEFF6FF)
+            ) {
+                Text(
+                    text = "Nhấn vào từng dòng để chỉnh thông tin. " +
+                            "Nút Tiếp tục chỉ chuyển sang form nhập, chưa lưu thuốc.",
+                    modifier = Modifier.padding(14.dp),
+                    color = Color(0xFF1D4ED8),
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
+
+            Spacer(Modifier.height(10.dp))
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // --- BANNER CÂU HỎI ---
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = Color(0xFFEFF6FF)
+            color = Color.White,
+            shadowElevation = 8.dp
         ) {
             Row(
-                modifier = Modifier.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_circle_help),
-                    contentDescription = null,
-                    tint = Color(0xFF2563EB),
-                    modifier = Modifier.size(20.dp)
-                )
-                Text(
-                    text = "Tên và hàm lượng có đúng với thuốc của bạn?",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF1E40AF)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // --- NÚT HÀNH ĐỘNG CỦA ĐÁY MÀN HÌNH ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            OutlinedButton(
-                onClick = onRescanClick,
                 modifier = Modifier
-                    .weight(1f)
-                    .height(52.dp),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.5.dp, Color(0xFF0F5145)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF0F5145))
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "Quét lại",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = Color(0xFF0F5145)
-                )
-            }
-
-            Button(
-                onClick = onConfirmClick,
-                modifier = Modifier
-                    .weight(1.2f)
-                    .height(52.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F5145))
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                OutlinedButton(
+                    onClick = onRescanClick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 52.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFF126B62))
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_check),
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
+                    Text("Quét lại")
+                }
+
+                Button(
+                    onClick = {
+                        onConfirmClick(
+                            scanResult.copy(
+                                medicineName = medicineName.trim(),
+                                dosage = dosage.trim(),
+                                dosageForm = dosageForm.trim()
+                            )
+                        )
+                    },
+                    enabled = medicineName.isNotBlank(),
+                    modifier = Modifier
+                        .weight(1.3f)
+                        .heightIn(min = 52.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF126B62)
                     )
-                    Text(
-                        text = "Đúng, tiếp tục",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = Color.White
-                    )
+                ) {
+                    Text("Tiếp tục")
                 }
             }
         }
+    }
 
-        Spacer(modifier = Modifier.height(16.dp))
+    val field = editingField
+
+    if (field != null) {
+        AlertDialog(
+            onDismissRequest = { editingField = null },
+            title = { Text("Chỉnh sửa $field") },
+            text = {
+                OutlinedTextField(
+                    value = editingValue,
+                    onValueChange = { editingValue = it },
+                    label = { Text(field) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = field != "Tên thuốc" ||
+                            editingValue.isNotBlank(),
+                    onClick = {
+                        when (field) {
+                            "Tên thuốc" -> medicineName = editingValue.trim()
+                            "Hàm lượng" -> dosage = editingValue.trim()
+                            "Dạng thuốc" -> dosageForm = editingValue.trim()
+                        }
+
+                        editingField = null
+                    }
+                ) {
+                    Text("Áp dụng")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingField = null }) {
+                    Text("Hủy")
+                }
+            }
+        )
     }
 }
 
 @Composable
-fun ResultDetailItem(
-    iconRes: Int,
+private fun ScanEditableInfoRow(
     label: String,
-    value: String
+    value: String,
+    onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(Color(0xFFE6F4EA), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(id = iconRes),
-                    contentDescription = null,
-                    tint = Color(0xFF0F5145),
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(
-                    text = label,
-                    fontSize = 14.sp,
-                    color = Color(0xFF64748B)
-                )
-                Text(
-                    text = value,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF0F172A)
-                )
-            }
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                color = Color(0xFF6B7280)
+            )
+
+            Text(
+                text = value.ifBlank { "Chưa nhập" },
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF1F2937)
+            )
         }
 
+        Spacer(Modifier.width(12.dp))
+
         Icon(
-            painter = painterResource(id = R.drawable.ic_chevron_right),
-            contentDescription = null,
-            tint = Color(0xFF94A3B8),
-            modifier = Modifier.size(18.dp)
+            imageVector = Icons.Default.Edit,
+            contentDescription = "Sửa $label",
+            tint = Color(0xFF126B62),
+            modifier = Modifier.size(20.dp)
         )
     }
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFFF8FAFC, heightDp = 892, widthDp = 412)
-@Composable
-fun ScanResultScreenPreview() {
-    ScanResultScreen()
 }
