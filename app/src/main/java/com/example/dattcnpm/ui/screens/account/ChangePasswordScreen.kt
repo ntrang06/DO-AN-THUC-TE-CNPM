@@ -135,8 +135,8 @@ fun ChangePasswordScreen(
                         "Nhập mật khẩu hiện tại và mật khẩu mới của bạn."
 
                     else ->
-                        "Bạn đang đăng nhập bằng Google. Đặt mật khẩu " +
-                                "để có thể đăng nhập thêm bằng email và mật khẩu."
+                        "Tài khoản này chưa có mật khẩu đăng nhập. " +
+                                "Hiện chưa hỗ trợ liên kết mật khẩu cho tài khoản Google."
                 },
                 fontSize = 14.sp,
                 color = secondary,
@@ -255,7 +255,7 @@ fun ChangePasswordScreen(
             Spacer(Modifier.height(24.dp))
 
             Button(
-                enabled = signedIn && !loading,
+                enabled = signedIn && hasPassword && !loading,
                 onClick = {
                     validationError = when {
                         hasPassword && currentPassword.isBlank() ->
@@ -284,7 +284,7 @@ fun ChangePasswordScreen(
 
                                 Toast.makeText(
                                     context,
-                                    "Đã lưu mật khẩu (chế độ UI thử nghiệm)",
+                                    "Đã đổi mật khẩu thành công",
                                     Toast.LENGTH_LONG
                                 ).show()
 
