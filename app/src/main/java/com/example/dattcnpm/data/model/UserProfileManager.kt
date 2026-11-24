@@ -11,16 +11,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.google.firebase.auth.FirebaseAuth
 import java.io.File
 import java.io.FileOutputStream
 
 object UserProfileManager {
 
-    private const val PREFS_NAME = "dattcnpm_local_profile"
+    private const val TAG = "UserProfileManager"
+    private const val PREFS_PREFIX = "dattcnpm_profile_"
 
     private const val DEFAULT_NAME = "Người dùng"
     private const val DEFAULT_ROLE = "Người uống thuốc"
-    private const val TAG = "UserProfileManager"
 
     private const val KEY_NAME = "user_name"
     private const val KEY_EMAIL = "user_email"
@@ -35,69 +36,103 @@ object UserProfileManager {
     private const val KEY_NOTIFICATIONS_ENABLED =
         "is_notifications_enabled"
 
-    private const val KEY_IS_LOGGED_IN = "is_logged_in"
     private const val KEY_SETUP_COMPLETED = "is_setup_completed"
     private const val KEY_HAS_CUSTOM_AVATAR = "has_custom_avatar"
 
+    private var initializedUid: String? = null
     private var initialized = false
 
-    private fun prefs(context: Context): SharedPreferences {
-        return context.applicationContext.getSharedPreferences(
-            PREFS_NAME,
-            Context.MODE_PRIVATE
-        )
-    }
-
-    private fun avatarFile(context: Context): File {
-        return File(
-            context.applicationContext.filesDir,
-            "local_user_avatar.jpg"
-        )
-    }
-
-    // -----------------------------------------
-    // USER PROFILE STATE
-    // -----------------------------------------
-
+    // Trạng thái hồ sơ hiển thị trong Compose.
     var name by mutableStateOf(DEFAULT_NAME)
-    var role by mutableStateOf(DEFAULT_ROLE)
     var email by mutableStateOf("")
     var phone by mutableStateOf("")
+    var role by mutableStateOf(DEFAULT_ROLE)
 
-    // -----------------------------------------
-    // APP SETTINGS
-    // -----------------------------------------
-
+    // Cài đặt ứng dụng.
     var isLargeTextEnabled by mutableStateOf(true)
-
     var isVoiceGuidanceEnabled by mutableStateOf(true)
-
     var voiceVolume by mutableFloatStateOf(0.7f)
-
     var isMedicationReminderEnabled by mutableStateOf(true)
-
     var isFamilyAlertEnabled by mutableStateOf(true)
-
     var isNotificationsEnabled by mutableStateOf(true)
 
-    // -----------------------------------------
-    // AVATAR STATE
-    // -----------------------------------------
-
+    // Ảnh đại diện.
     var currentAvatarBitmap by mutableStateOf<Bitmap?>(null)
-
     var tempCapturedBitmap by mutableStateOf<Bitmap?>(null)
-
     var tempSelectedUri by mutableStateOf<Uri?>(null)
 
-    // -----------------------------------------
-    // INITIALIZATION
-    // -----------------------------------------
+    private fun currentUid(): String? {
+        return FirebaseAuth.getInstance()
+            .currentUser
+            ?.uid
+            ?.takeIf { it.isNotBlank() }
+    }
 
+    private fun prefs(
+        context: Context,
+        uid: String
+    ): SharedPreferences {
+        return context.applicationContext
+            .getSharedPreferences(
+                PREFS_PREFIX + uid,
+                Context.MODE_PRIVATE
+            )
+    }
+
+    private fun avatarFile(
+        context: Context,
+        uid: String
+    ): File {
+        val safeUid = uid.replace(
+            Regex("[^A-Za-z0-9_-]"),
+            "_"
+        )
+
+        return File(
+            context.applicationContext.filesDir,
+            "avatar_$safeUid.jpg"
+        )
+    }
+
+    private fun resetState() {
+        name = DEFAULT_NAME
+        email = ""
+        phone = ""
+        role = DEFAULT_ROLE
+
+        isLargeTextEnabled = true
+        isVoiceGuidanceEnabled = true
+        voiceVolume = 0.7f
+
+        isMedicationReminderEnabled = true
+        isFamilyAlertEnabled = true
+        isNotificationsEnabled = true
+
+        currentAvatarBitmap = null
+        tempCapturedBitmap = null
+        tempSelectedUri = null
+    }
+
+    // Tải dữ liệu theo UID đang đăng nhập.
+    @Synchronized
     fun init(context: Context) {
-        if (initialized) return
+        val uid = currentUid()
 
-        val saved = prefs(context)
+        if (initialized && initializedUid == uid) {
+            return
+        }
+
+        resetState()
+
+        initializedUid = uid
+        initialized = true
+
+        // Không có Firebase user: không tải hồ sơ cũ.
+        if (uid == null) {
+            return
+        }
+
+        val saved = prefs(context, uid)
 
         name = saved.getString(
             KEY_NAME,
@@ -149,37 +184,55 @@ object UserProfileManager {
             true
         )
 
-        val file = avatarFile(context)
+        val file = avatarFile(context, uid)
 
-        if (
-            saved.getBoolean(KEY_HAS_CUSTOM_AVATAR, false) &&
-            file.isFile
+        currentAvatarBitmap = if (
+            saved.getBoolean(
+                KEY_HAS_CUSTOM_AVATAR,
+                false
+            ) && file.isFile
         ) {
-            currentAvatarBitmap = BitmapFactory.decodeFile(
+            BitmapFactory.decodeFile(
                 file.absolutePath
             )
         } else {
-            currentAvatarBitmap = null
+            null
         }
-
-        initialized = true
     }
 
-    // -----------------------------------------
-    // SAVE PROFILE LOCALLY
-    // -----------------------------------------
-
+    // Lưu hồ sơ vào vùng riêng của UID.
     fun saveProfileInfo(context: Context) {
-        prefs(context).edit()
+        init(context)
+
+        val uid = currentUid() ?: return
+
+        if (uid != initializedUid) return
+
+        prefs(context, uid).edit()
             .putString(KEY_NAME, name)
             .putString(KEY_EMAIL, email)
             .putString(KEY_PHONE, phone)
             .putString(KEY_ROLE, role)
-            .putBoolean(KEY_LARGE_TEXT, isLargeTextEnabled)
-            .putBoolean(KEY_VOICE_GUIDANCE, isVoiceGuidanceEnabled)
-            .putFloat(KEY_VOICE_VOLUME, voiceVolume)
-            .putBoolean(KEY_MED_REMINDERS, isMedicationReminderEnabled)
-            .putBoolean(KEY_FAMILY_ALERTS, isFamilyAlertEnabled)
+            .putBoolean(
+                KEY_LARGE_TEXT,
+                isLargeTextEnabled
+            )
+            .putBoolean(
+                KEY_VOICE_GUIDANCE,
+                isVoiceGuidanceEnabled
+            )
+            .putFloat(
+                KEY_VOICE_VOLUME,
+                voiceVolume
+            )
+            .putBoolean(
+                KEY_MED_REMINDERS,
+                isMedicationReminderEnabled
+            )
+            .putBoolean(
+                KEY_FAMILY_ALERTS,
+                isFamilyAlertEnabled
+            )
             .putBoolean(
                 KEY_NOTIFICATIONS_ENABLED,
                 isNotificationsEnabled
@@ -187,32 +240,28 @@ object UserProfileManager {
             .apply()
     }
 
-    // -----------------------------------------
-    // LOGIN STATE - LOCAL MOCK
-    // -----------------------------------------
-
+    // Firebase Auth là nguồn xác thực chính.
     fun isLoggedIn(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            KEY_IS_LOGGED_IN,
-            false
-        )
+        return currentUid() != null
     }
 
+    // Giữ hàm cũ để tương thích với code màn hình.
+    // Không được dùng SharedPreferences để tự tạo phiên.
     fun setLoggedIn(
         context: Context,
         loggedIn: Boolean
     ) {
-        prefs(context).edit()
-            .putBoolean(KEY_IS_LOGGED_IN, loggedIn)
-            .apply()
+        if (loggedIn && currentUid() != null) {
+            init(context)
+        } else if (!loggedIn) {
+            clearSession()
+        }
     }
 
-    // -----------------------------------------
-    // INITIAL SETUP STATE
-    // -----------------------------------------
-
     fun isSetupCompleted(context: Context): Boolean {
-        return prefs(context).getBoolean(
+        val uid = currentUid() ?: return false
+
+        return prefs(context, uid).getBoolean(
             KEY_SETUP_COMPLETED,
             false
         )
@@ -222,29 +271,44 @@ object UserProfileManager {
         context: Context,
         completed: Boolean
     ) {
-        prefs(context).edit()
-            .putBoolean(KEY_SETUP_COMPLETED, completed)
+        val uid = currentUid() ?: return
+
+        prefs(context, uid).edit()
+            .putBoolean(
+                KEY_SETUP_COMPLETED,
+                completed
+            )
             .apply()
     }
 
-    // -----------------------------------------
-    // AVATAR MANAGEMENT
-    // -----------------------------------------
+    // Xóa dữ liệu khỏi bộ nhớ khi đổi tài khoản.
+    // Không xóa hồ sơ đã lưu của tài khoản cũ.
+    @Synchronized
+    fun clearSession() {
+        resetState()
+        initializedUid = null
+        initialized = false
+    }
 
     fun hasCustomAvatar(context: Context): Boolean {
-        return prefs(context).getBoolean(
+        val uid = currentUid() ?: return false
+
+        return prefs(context, uid).getBoolean(
             KEY_HAS_CUSTOM_AVATAR,
             false
-        ) && avatarFile(context).isFile
+        ) && avatarFile(context, uid).isFile
     }
 
     fun saveAvatarBitmap(
         context: Context,
         bitmap: Bitmap
     ): Boolean {
-        return try {
-            val file = avatarFile(context)
+        val uid = currentUid() ?: return false
 
+        init(context)
+
+        return try {
+            val file = avatarFile(context, uid)
             val temporary = File(
                 file.parentFile,
                 file.name + ".tmp"
@@ -264,9 +328,13 @@ object UserProfileManager {
                 output.flush()
             }
 
+            check(currentUid() == uid) {
+                "Tài khoản đã thay đổi."
+            }
+
             if (file.exists()) {
                 check(file.delete()) {
-                    "Không thể thay thế ảnh đại diện cũ."
+                    "Không thể thay ảnh cũ."
                 }
             }
 
@@ -274,8 +342,11 @@ object UserProfileManager {
                 "Không thể lưu ảnh đại diện."
             }
 
-            prefs(context).edit()
-                .putBoolean(KEY_HAS_CUSTOM_AVATAR, true)
+            prefs(context, uid).edit()
+                .putBoolean(
+                    KEY_HAS_CUSTOM_AVATAR,
+                    true
+                )
                 .apply()
 
             currentAvatarBitmap = bitmap
@@ -284,21 +355,32 @@ object UserProfileManager {
 
             true
         } catch (error: Exception) {
-            Log.e(TAG, "Không thể lưu ảnh đại diện.", error)
+            Log.e(
+                TAG,
+                "Không thể lưu ảnh đại diện.",
+                error
+            )
             false
         }
     }
 
     fun deleteAvatar(context: Context): Boolean {
+        val uid = currentUid() ?: return false
+
+        init(context)
+
         return try {
-            val file = avatarFile(context)
+            val file = avatarFile(context, uid)
 
             check(!file.exists() || file.delete()) {
                 "Không thể xóa ảnh đại diện."
             }
 
-            prefs(context).edit()
-                .putBoolean(KEY_HAS_CUSTOM_AVATAR, false)
+            prefs(context, uid).edit()
+                .putBoolean(
+                    KEY_HAS_CUSTOM_AVATAR,
+                    false
+                )
                 .apply()
 
             currentAvatarBitmap = null
@@ -307,7 +389,11 @@ object UserProfileManager {
 
             true
         } catch (error: Exception) {
-            Log.e(TAG, "Không thể xóa ảnh đại diện.", error)
+            Log.e(
+                TAG,
+                "Không thể xóa ảnh đại diện.",
+                error
+            )
             false
         }
     }
@@ -323,14 +409,14 @@ object UserProfileManager {
                     BitmapFactory.decodeStream(input)
                 }
         } catch (error: Exception) {
-            Log.e(TAG, "Không thể đọc ảnh.", error)
+            Log.e(
+                TAG,
+                "Không thể đọc ảnh.",
+                error
+            )
             null
         }
     }
-
-    // -----------------------------------------
-    // AVATAR INITIALS
-    // -----------------------------------------
 
     fun getInitials(): String {
         val parts = name
@@ -351,34 +437,25 @@ object UserProfileManager {
         }
     }
 
-    // -----------------------------------------
-    // RESET LOCAL STATE FOR TESTING
-    // -----------------------------------------
-
+    // Chỉ xóa dữ liệu cục bộ của UID hiện tại.
+    // Không xóa tài khoản Firebase hay Firestore.
     fun resetForTesting(context: Context) {
-        prefs(context).edit().clear().apply()
+        val uid = currentUid()
 
-        val file = avatarFile(context)
-        if (file.exists()) {
-            file.delete()
+        if (uid != null) {
+            prefs(context, uid)
+                .edit()
+                .clear()
+                .commit()
+
+            val file = avatarFile(context, uid)
+
+            if (file.exists()) {
+                file.delete()
+            }
         }
 
-        name = DEFAULT_NAME
-        role = DEFAULT_ROLE
-        email = ""
-        phone = ""
-
-        isLargeTextEnabled = true
-        isVoiceGuidanceEnabled = true
-        voiceVolume = 0.7f
-        isMedicationReminderEnabled = true
-        isFamilyAlertEnabled = true
-        isNotificationsEnabled = true
-
-        currentAvatarBitmap = null
-        tempCapturedBitmap = null
-        tempSelectedUri = null
-
-        initialized = true
+        clearSession()
+        init(context)
     }
 }
