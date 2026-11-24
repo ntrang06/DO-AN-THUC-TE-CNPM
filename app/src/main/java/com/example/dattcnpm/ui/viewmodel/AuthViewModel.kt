@@ -1,20 +1,31 @@
 
 package com.example.dattcnpm.ui.viewmodel
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.util.Patterns
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.dattcnpm.data.model.UserProfileManager
 import com.example.dattcnpm.data.remote.AuthRepository
 import com.example.dattcnpm.data.remote.UserProfileRepository
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuthException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AuthViewModel : ViewModel() {
 
@@ -37,6 +48,19 @@ class AuthViewModel : ViewModel() {
         errorMessage = null
     }
 
+    private fun saveLocalProfile(
+        context: Context,
+        name: String,
+        email: String
+    ) {
+        UserProfileManager.init(context)
+        UserProfileManager.name = name
+        UserProfileManager.email = email
+        UserProfileManager.role = "Người uống thuốc"
+        UserProfileManager.setLoggedIn(context, true)
+        UserProfileManager.saveProfileInfo(context)
+    }
+
     fun signIn(
         email: String,
         pass: String,
@@ -53,25 +77,65 @@ class AuthViewModel : ViewModel() {
             return
         }
 
-        startAction {
-            val user = AuthRepository.signIn(address, pass).user
-                ?: error("Không tìm thấy tài khoản đăng nhập.")
+        isLoading = true
+        isSuccess = false
+        errorMessage = null
 
-            val profile = UserProfileRepository.getProfile(user.uid)
-                ?: UserProfileRepository.createProfile(
-                    user.uid,
-                    user.displayName
-                        ?.takeIf { it.isNotBlank() }
-                        ?: address.substringBefore("@"),
-                    address
+        viewModelScope.launch {
+            var success = false
+            var authenticatedUid: String? = null
+
+            try {
+                val user = withContext(NonCancellable) {
+                    AuthRepository.signIn(address, pass).user
+                } ?: error("Không tìm thấy tài khoản đăng nhập.")
+
+                authenticatedUid = user.uid
+
+                val profile = UserProfileRepository
+                    .getProfile(user.uid)
+                    ?: UserProfileRepository.createProfile(
+                        user.uid,
+                        user.displayName
+                            ?.takeIf { it.isNotBlank() }
+                            ?: address.substringBefore("@"),
+                        address
+                    )
+
+                check(AuthRepository.currentUid == user.uid) {
+                    "Phiên đăng nhập đã thay đổi."
+                }
+
+                saveLocalProfile(
+                    context,
+                    profile.displayName.ifBlank {
+                        address.substringBefore("@")
+                    },
+                    profile.email.ifBlank { address }
                 )
 
-            UserProfileManager.init(context)
-            UserProfileManager.name = profile.displayName
-            UserProfileManager.email = profile.email
-            UserProfileManager.setLoggedIn(context, true)
-            UserProfileManager.saveProfileInfo(context)
-        }.invoke(onComplete)
+                success = true
+                isSuccess = true
+
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                errorMessage = translateError(error)
+            } finally {
+                if (
+                    !success &&
+                    authenticatedUid != null &&
+                    AuthRepository.currentUid == authenticatedUid
+                ) {
+                    AuthRepository.signOut()
+                    UserProfileManager.setLoggedIn(context, false)
+                }
+
+                isLoading = false
+            }
+
+            onComplete(success)
+        }
     }
 
     fun signUp(
@@ -107,33 +171,218 @@ class AuthViewModel : ViewModel() {
             return
         }
 
-        startAction {
-            val user = AuthRepository.signUp(address, pass).user
-                ?: error("Không tạo được tài khoản.")
+        isLoading = true
+        isSuccess = false
+        errorMessage = null
+
+        viewModelScope.launch {
+            var success = false
+            var createdUid: String? = null
 
             try {
-                UserProfileRepository.createProfile(
-                    user.uid,
+                val user = withContext(NonCancellable) {
+                    AuthRepository.signUp(address, pass).user
+                } ?: error("Không tạo được tài khoản.")
+
+                createdUid = user.uid
+
+                try {
+                    UserProfileRepository.createProfile(
+                        user.uid,
+                        displayName,
+                        address
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    throw IllegalStateException(
+                        "Tài khoản Firebase đã được tạo nhưng " +
+                                "chưa lưu được hồ sơ. Hãy đăng nhập " +
+                                "lại sau khi Firestore hoạt động.",
+                        error
+                    )
+                }
+
+                check(AuthRepository.currentUid == user.uid) {
+                    "Phiên đăng nhập đã thay đổi."
+                }
+
+                saveLocalProfile(
+                    context,
                     displayName,
                     address
                 )
-            } catch (error: CancellationException) {
-                throw error
+
+                success = true
+                isSuccess = true
+
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Exception) {
-                throw IllegalStateException(
-                    "Tài khoản Firebase đã được tạo nhưng chưa " +
-                            "lưu được hồ sơ. Không đăng ký lại; " +
-                            "hãy đăng nhập sau khi Firestore hoạt động.",
-                    error
-                )
+                errorMessage = translateError(error)
+            } finally {
+                if (
+                    !success &&
+                    createdUid != null &&
+                    AuthRepository.currentUid == createdUid
+                ) {
+                    AuthRepository.signOut()
+                    UserProfileManager.setLoggedIn(context, false)
+                }
+
+                isLoading = false
             }
 
-            UserProfileManager.init(context)
-            UserProfileManager.name = displayName
-            UserProfileManager.email = address
-            UserProfileManager.setLoggedIn(context, true)
-            UserProfileManager.saveProfileInfo(context)
-        }.invoke(onComplete)
+            onComplete(success)
+        }
+    }
+
+    fun signInWithGoogle(
+        context: Context,
+        onComplete: (Boolean) -> Unit
+    ) {
+        if (isLoading) return
+
+        if (AuthRepository.currentUser != null) {
+            errorMessage =
+                "Vui lòng đăng xuất tài khoản hiện tại trước."
+            onComplete(false)
+            return
+        }
+
+        val activity = generateSequence(context) {
+            (it as? ContextWrapper)?.baseContext
+        }.filterIsInstance<Activity>().firstOrNull()
+
+        if (activity == null) {
+            errorMessage =
+                "Không tìm thấy Activity để đăng nhập Google."
+            onComplete(false)
+            return
+        }
+
+        isLoading = true
+        isSuccess = false
+        errorMessage = null
+
+        viewModelScope.launch {
+            var success = false
+            var authenticatedUid: String? = null
+
+            try {
+                val clientIdResource =
+                    context.resources.getIdentifier(
+                        "default_web_client_id",
+                        "string",
+                        context.packageName
+                    )
+
+                check(clientIdResource != 0) {
+                    "Chưa có Google Web Client ID. " +
+                            "Kiểm tra Firebase và google-services.json."
+                }
+
+                val webClientId =
+                    context.getString(clientIdResource)
+
+                check(webClientId.isNotBlank()) {
+                    "Google Web Client ID không hợp lệ."
+                }
+
+                val googleOption =
+                    GetSignInWithGoogleOption.Builder(
+                        webClientId
+                    ).build()
+
+                val request = GetCredentialRequest.Builder()
+                    .addCredentialOption(googleOption)
+                    .build()
+
+                val credential = CredentialManager
+                    .create(activity)
+                    .getCredential(
+                        context = activity,
+                        request = request
+                    )
+                    .credential
+
+                check(
+                    credential is CustomCredential &&
+                            credential.type ==
+                            GoogleIdTokenCredential
+                                .TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+                ) {
+                    "Không nhận được tài khoản Google hợp lệ."
+                }
+
+                val googleIdToken =
+                    GoogleIdTokenCredential
+                        .createFrom(credential.data)
+                        .idToken
+
+                val user = withContext(NonCancellable) {
+                    AuthRepository
+                        .signInWithGoogle(googleIdToken)
+                        .user
+                } ?: error(
+                    "Không xác định được tài khoản Google."
+                )
+
+                authenticatedUid = user.uid
+
+                val userEmail = user.email.orEmpty()
+
+                val userName = user.displayName
+                    ?.takeIf { it.isNotBlank() }
+                    ?: userEmail.substringBefore("@")
+                        .ifBlank { "Người dùng" }
+
+                val profile = UserProfileRepository
+                    .getProfile(user.uid)
+                    ?: UserProfileRepository.createProfile(
+                        user.uid,
+                        userName,
+                        userEmail
+                    )
+
+                check(AuthRepository.currentUid == user.uid) {
+                    "Phiên đăng nhập đã thay đổi."
+                }
+
+                saveLocalProfile(
+                    context,
+                    profile.displayName.ifBlank { userName },
+                    profile.email.ifBlank { userEmail }
+                )
+
+                success = true
+                isSuccess = true
+
+            } catch (_: GetCredentialCancellationException) {
+                // Người dùng đóng giao diện Google.
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: GetCredentialException) {
+                errorMessage =
+                    "Không thể đăng nhập Google. " +
+                            "Vui lòng kiểm tra tài khoản và thử lại."
+            } catch (error: Exception) {
+                errorMessage = translateError(error)
+            } finally {
+                if (
+                    !success &&
+                    authenticatedUid != null &&
+                    AuthRepository.currentUid == authenticatedUid
+                ) {
+                    AuthRepository.signOut()
+                    UserProfileManager.setLoggedIn(context, false)
+                }
+
+                isLoading = false
+            }
+
+            onComplete(success)
+        }
     }
 
     fun sendPasswordReset(
@@ -150,9 +399,27 @@ class AuthViewModel : ViewModel() {
             return
         }
 
-        startAction {
-            AuthRepository.sendPasswordResetEmail(address)
-        }.invoke(onComplete)
+        isLoading = true
+        isSuccess = false
+        errorMessage = null
+
+        viewModelScope.launch {
+            var success = false
+
+            try {
+                AuthRepository.sendPasswordResetEmail(address)
+                success = true
+                isSuccess = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                errorMessage = translateError(error)
+            } finally {
+                isLoading = false
+            }
+
+            onComplete(success)
+        }
     }
 
     fun signOut(
@@ -169,53 +436,9 @@ class AuthViewModel : ViewModel() {
         onComplete()
     }
 
-    fun signInWithGoogle(
-        context: Context,
-        onComplete: (Boolean) -> Unit
-    ) {
-        // Chưa nối Credential Manager để lấy Google ID Token.
-        // Không giả lập đăng nhập thành công.
-        errorMessage =
-            "Đăng nhập Google chưa được cấu hình hoàn tất."
-        isSuccess = false
-        onComplete(false)
-    }
-
     private fun isValidEmail(email: String): Boolean {
         return email.isNotBlank() &&
                 Patterns.EMAIL_ADDRESS.matcher(email).matches()
-    }
-
-    private fun startAction(
-        action: suspend () -> Unit
-    ): ((Boolean) -> Unit) -> Unit {
-        return { onComplete ->
-            if (isLoading) {
-                onComplete(false)
-            } else {
-                isLoading = true
-                isSuccess = false
-                errorMessage = null
-
-                viewModelScope.launch {
-                    var success = false
-
-                    try {
-                        action()
-                        success = true
-                        isSuccess = true
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        errorMessage = translateError(error)
-                    } finally {
-                        isLoading = false
-                    }
-
-                    onComplete(success)
-                }
-            }
-        }
     }
 
     private fun translateError(error: Exception): String {
@@ -230,7 +453,7 @@ class AuthViewModel : ViewModel() {
         }
 
         if (error is FirebaseNetworkException) {
-            return "Không có kết nối mạng. Vui lòng thử lại."
+            return "Không có kết nối Internet. Vui lòng thử lại."
         }
 
         if (error is FirebaseAuthException) {
@@ -254,14 +477,17 @@ class AuthViewModel : ViewModel() {
                     "Tài khoản đã bị vô hiệu hóa."
 
                 "ERROR_TOO_MANY_REQUESTS" ->
-                    "Bạn thử quá nhiều lần. Vui lòng thử lại sau."
+                    "Bạn đã thử quá nhiều lần."
+
+                "ERROR_OPERATION_NOT_ALLOWED" ->
+                    "Phương thức đăng nhập chưa được bật."
 
                 else ->
                     "Không thể xác thực tài khoản. Vui lòng thử lại."
             }
         }
 
-        return "Không thể hoàn tất yêu cầu. " +
-                (error.message ?: "Vui lòng thử lại.")
+        return error.message
+            ?: "Không thể hoàn tất yêu cầu. Vui lòng thử lại."
     }
 }
