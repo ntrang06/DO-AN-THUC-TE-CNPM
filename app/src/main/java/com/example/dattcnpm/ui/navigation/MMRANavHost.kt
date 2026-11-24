@@ -8,13 +8,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +27,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.example.dattcnpm.data.device.DeviceManager
 import com.example.dattcnpm.data.model.InitialSetupPreferences
 import com.example.dattcnpm.data.model.UserProfileManager
 import com.example.dattcnpm.ui.screens.account.*
@@ -41,6 +45,7 @@ import com.example.dattcnpm.ui.screens.scan.ScanScreen
 import com.example.dattcnpm.ui.screens.setup.SetupDisplayPreferenceScreen
 import com.example.dattcnpm.ui.screens.setup.SetupTargetUserScreen
 import com.example.dattcnpm.ui.viewmodel.AuthViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun MMRANavHost(
@@ -48,12 +53,40 @@ fun MMRANavHost(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    UserProfileManager.init(context)
-
+    val scope = rememberCoroutineScope()
     val authViewModel: AuthViewModel = viewModel()
+
+    // Tải hồ sơ cục bộ theo Firebase UID hiện tại.
+    UserProfileManager.init(context)
 
     var setupPreferences by remember {
         mutableStateOf(InitialSetupPreferences())
+    }
+
+    // Firebase giữ phiên đăng nhập khi đóng/mở lại app.
+    val startDestination = remember {
+        if (authViewModel.isLoggedIn) {
+            if (UserProfileManager.isSetupCompleted(context)) {
+                MMRADestinations.HOME
+            } else {
+                MMRADestinations.INITIAL_SETUP_TARGET
+            }
+        } else {
+            MMRADestinations.LOGIN
+        }
+    }
+
+    // Khi mở lại app, đồng bộ thiết bị cho tài khoản
+    // Firebase đã đăng nhập từ lần trước.
+    LaunchedEffect(Unit) {
+        val uid = authViewModel.currentUid
+
+        if (!uid.isNullOrBlank()) {
+            DeviceManager.syncCurrentDevice(
+                context.applicationContext,
+                uid
+            )
+        }
     }
 
     val showNotAvailable: (String) -> Unit = { feature ->
@@ -76,7 +109,9 @@ fun MMRANavHost(
     }
 
     val navigateAfterLogin: () -> Unit = navigate@{
-        if (!authViewModel.isLoggedIn) {
+        val uid = authViewModel.currentUid
+
+        if (uid.isNullOrBlank()) {
             Toast.makeText(
                 context,
                 "Bạn cần đăng nhập trước.",
@@ -85,8 +120,17 @@ fun MMRANavHost(
             return@navigate
         }
 
+        // Lưu trạng thái hồ sơ người dùng.
         UserProfileManager.setLoggedIn(context, true)
         UserProfileManager.saveProfileInfo(context)
+
+        // Đồng bộ FCM token sau khi đăng nhập thành công.
+        scope.launch {
+            DeviceManager.syncCurrentDevice(
+                context.applicationContext,
+                uid
+            )
+        }
 
         val destination = if (
             UserProfileManager.isSetupCompleted(context)
@@ -106,15 +150,20 @@ fun MMRANavHost(
 
     val googleSignIn: () -> Unit = {
         if (!authViewModel.isLoading) {
-            authViewModel.signInWithGoogle(context) { success ->
-                if (success) {
-                    navigateAfterLogin()
+            if (authViewModel.isLoggedIn) {
+                // Tránh đăng nhập lại khi Firebase đã giữ phiên.
+                navigateAfterLogin()
+            } else {
+                authViewModel.signInWithGoogle(context) { success ->
+                    if (success) {
+                        navigateAfterLogin()
+                    }
                 }
             }
         }
     }
 
-    // Trang chủ và lịch uống mở cùng một màn chi tiết liều.
+    // Trang chủ và lịch uống mở cùng màn chi tiết liều.
     val openDose: (String) -> Unit = { doseId ->
         navController.navigate(
             "reminder/${Uri.encode(doseId)}?readOnly=false"
@@ -125,7 +174,7 @@ fun MMRANavHost(
 
     NavHost(
         navController = navController,
-        startDestination = MMRADestinations.LOGIN,
+        startDestination = startDestination,
         modifier = modifier
     ) {
 
@@ -261,6 +310,7 @@ fun MMRANavHost(
             )
         }
 
+        // EMAIL VERIFICATION
         composable(MMRADestinations.VERIFY_EMAIL) {
             PlaceholderScreen(
                 title = "Xác thực Email",
@@ -269,6 +319,7 @@ fun MMRANavHost(
             )
         }
 
+        // PHONE VERIFICATION
         composable(MMRADestinations.VERIFY_PHONE) {
             PlaceholderScreen(
                 title = "Xác thực số điện thoại",
@@ -322,7 +373,9 @@ fun MMRANavHost(
                         navController.navigate(
                             MMRADestinations.LOGIN
                         ) {
-                            popUpTo(0)
+                            popUpTo(0) {
+                                inclusive = true
+                            }
                             launchSingleTop = true
                         }
                     }
@@ -381,7 +434,9 @@ fun MMRANavHost(
                         navController.navigate(
                             MMRADestinations.LOGIN
                         ) {
-                            popUpTo(0)
+                            popUpTo(0) {
+                                inclusive = true
+                            }
                             launchSingleTop = true
                         }
                     }
@@ -815,10 +870,14 @@ private fun AccountDestination(
             )
         },
         onUsageModeClick = {
-            navController.navigate(MMRADestinations.MANAGE_USAGE_MODE)
+            navController.navigate(
+                MMRADestinations.MANAGE_USAGE_MODE
+            )
         },
         onSwitchAccountClick = {
-            navController.navigate(MMRADestinations.SWITCH_ACCOUNT)
+            navController.navigate(
+                MMRADestinations.SWITCH_ACCOUNT
+            )
         },
         onLogoutClick = {
             navController.navigate(
@@ -866,6 +925,7 @@ private fun PlaceholderScreen(
             text = title,
             style = MaterialTheme.typography.headlineSmall
         )
+
         if (actionLabel != null) {
             TextButton(onClick = onActionClick) {
                 Text(actionLabel)
@@ -879,7 +939,7 @@ private fun AuthErrorDialog(
     message: String,
     onDismiss: () -> Unit
 ) {
-    androidx.compose.material3.AlertDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text("Đăng nhập chưa thành công")
