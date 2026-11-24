@@ -40,6 +40,7 @@ import com.example.dattcnpm.ui.screens.scan.ScanScreen
 import com.example.dattcnpm.ui.screens.setup.SetupDisplayPreferenceScreen
 import com.example.dattcnpm.ui.screens.setup.SetupTargetUserScreen
 import com.example.dattcnpm.ui.viewmodel.AuthViewModel
+import com.example.dattcnpm.ui.screens.auth.FirebasePasswordResetScreen
 
 @Composable
 fun MMRANavHost(
@@ -304,14 +305,28 @@ fun MMRANavHost(
             )
         }
 
-        // Phần đặt lại mật khẩu Firebase sẽ tích hợp sau.
+
         composable(MMRADestinations.FORGOT_PASSWORD) {
-            PlaceholderScreen(
-                title = "Quên mật khẩu",
-                actionLabel = "Quay lại",
-                onActionClick = goBack
+            FirebasePasswordResetScreen(
+                onBackClick = {
+                    if (!authViewModel.isLoading) {
+                        authViewModel.clearError()
+                        goBack()
+                    }
+                },
+
+                onSendEmail = { email, onComplete ->
+                    authViewModel.sendPasswordReset(
+                        email = email,
+                        onComplete = onComplete
+                    )
+                },
+
+                isLoading = authViewModel.isLoading,
+                externalError = authViewModel.errorMessage
             )
         }
+
 
         // -------------------------------
         // INITIAL SETUP - TARGET USER
