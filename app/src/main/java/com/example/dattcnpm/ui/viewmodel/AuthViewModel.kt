@@ -1,12 +1,19 @@
+
 package com.example.dattcnpm.ui.viewmodel
 
 import android.content.Context
+import android.util.Patterns
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
+import com.example.dattcnpm.data.model.UserProfileManager
+import com.example.dattcnpm.data.remote.AuthRepository
+import com.example.dattcnpm.data.remote.UserProfileRepository
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.auth.FirebaseAuthException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 class AuthViewModel : ViewModel() {
@@ -20,12 +27,11 @@ class AuthViewModel : ViewModel() {
     var isSuccess by mutableStateOf(false)
         private set
 
-    // Mock session: chỉ tồn tại trong bộ nhớ ứng dụng.
-    var mockLoggedIn by mutableStateOf(false)
-        private set
+    val currentUid: String?
+        get() = AuthRepository.currentUid
 
-    var mockEmail by mutableStateOf<String?>(null)
-        private set
+    val isLoggedIn: Boolean
+        get() = AuthRepository.isLoggedIn()
 
     fun clearError() {
         errorMessage = null
@@ -41,26 +47,31 @@ class AuthViewModel : ViewModel() {
 
         val address = email.trim()
 
-        if (address.isBlank() || pass.isBlank()) {
-            errorMessage = "Vui lòng nhập đầy đủ email và mật khẩu."
+        if (!isValidEmail(address) || pass.isBlank()) {
+            errorMessage = "Email hoặc mật khẩu không hợp lệ."
             onComplete(false)
             return
         }
 
-        if (!android.util.Patterns.EMAIL_ADDRESS
-                .matcher(address).matches()
-        ) {
-            errorMessage = "Vui lòng nhập địa chỉ email hợp lệ."
-            onComplete(false)
-            return
-        }
+        startAction {
+            val user = AuthRepository.signIn(address, pass).user
+                ?: error("Không tìm thấy tài khoản đăng nhập.")
 
-        executeMock {
-            mockLoggedIn = true
-            mockEmail = address
-            isSuccess = true
-            onComplete(true)
-        }
+            val profile = UserProfileRepository.getProfile(user.uid)
+                ?: UserProfileRepository.createProfile(
+                    user.uid,
+                    user.displayName
+                        ?.takeIf { it.isNotBlank() }
+                        ?: address.substringBefore("@"),
+                    address
+                )
+
+            UserProfileManager.init(context)
+            UserProfileManager.name = profile.displayName
+            UserProfileManager.email = profile.email
+            UserProfileManager.setLoggedIn(context, true)
+            UserProfileManager.saveProfileInfo(context)
+        }.invoke(onComplete)
     }
 
     fun signUp(
@@ -79,8 +90,7 @@ class AuthViewModel : ViewModel() {
             displayName.isBlank() ->
                 errorMessage = "Vui lòng nhập họ và tên."
 
-            !android.util.Patterns.EMAIL_ADDRESS
-                .matcher(address).matches() ->
+            !isValidEmail(address) ->
                 errorMessage = "Vui lòng nhập email hợp lệ."
 
             pass.length < 8 ||
@@ -88,6 +98,8 @@ class AuthViewModel : ViewModel() {
                     pass.none { it.isDigit() } ->
                 errorMessage =
                     "Mật khẩu cần ít nhất 8 ký tự, gồm chữ và số."
+
+            else -> errorMessage = null
         }
 
         if (errorMessage != null) {
@@ -95,12 +107,33 @@ class AuthViewModel : ViewModel() {
             return
         }
 
-        executeMock {
-            mockLoggedIn = true
-            mockEmail = address
-            isSuccess = true
-            onComplete(true)
-        }
+        startAction {
+            val user = AuthRepository.signUp(address, pass).user
+                ?: error("Không tạo được tài khoản.")
+
+            try {
+                UserProfileRepository.createProfile(
+                    user.uid,
+                    displayName,
+                    address
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                throw IllegalStateException(
+                    "Tài khoản Firebase đã được tạo nhưng chưa " +
+                            "lưu được hồ sơ. Không đăng ký lại; " +
+                            "hãy đăng nhập sau khi Firestore hoạt động.",
+                    error
+                )
+            }
+
+            UserProfileManager.init(context)
+            UserProfileManager.name = displayName
+            UserProfileManager.email = address
+            UserProfileManager.setLoggedIn(context, true)
+            UserProfileManager.saveProfileInfo(context)
+        }.invoke(onComplete)
     }
 
     fun sendPasswordReset(
@@ -111,18 +144,15 @@ class AuthViewModel : ViewModel() {
 
         val address = email.trim()
 
-        if (!android.util.Patterns.EMAIL_ADDRESS
-                .matcher(address).matches()
-        ) {
+        if (!isValidEmail(address)) {
             errorMessage = "Vui lòng nhập email hợp lệ."
             onComplete(false)
             return
         }
 
-        executeMock {
-            isSuccess = true
-            onComplete(true)
-        }
+        startAction {
+            AuthRepository.sendPasswordResetEmail(address)
+        }.invoke(onComplete)
     }
 
     fun signOut(
@@ -131,48 +161,107 @@ class AuthViewModel : ViewModel() {
     ) {
         if (isLoading) return
 
-        executeMock {
-            mockLoggedIn = false
-            mockEmail = null
-            isSuccess = true
-            onComplete()
-        }
+        AuthRepository.signOut()
+        UserProfileManager.setLoggedIn(context, false)
+
+        isSuccess = true
+        errorMessage = null
+        onComplete()
     }
 
     fun signInWithGoogle(
         context: Context,
         onComplete: (Boolean) -> Unit
     ) {
-        if (isLoading) return
+        // Chưa nối Credential Manager để lấy Google ID Token.
+        // Không giả lập đăng nhập thành công.
+        errorMessage =
+            "Đăng nhập Google chưa được cấu hình hoàn tất."
+        isSuccess = false
+        onComplete(false)
+    }
 
-        executeMock {
-            mockLoggedIn = true
-            mockEmail = "demo@gmail.com"
-            isSuccess = true
-            onComplete(true)
+    private fun isValidEmail(email: String): Boolean {
+        return email.isNotBlank() &&
+                Patterns.EMAIL_ADDRESS.matcher(email).matches()
+    }
+
+    private fun startAction(
+        action: suspend () -> Unit
+    ): ((Boolean) -> Unit) -> Unit {
+        return { onComplete ->
+            if (isLoading) {
+                onComplete(false)
+            } else {
+                isLoading = true
+                isSuccess = false
+                errorMessage = null
+
+                viewModelScope.launch {
+                    var success = false
+
+                    try {
+                        action()
+                        success = true
+                        isSuccess = true
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        errorMessage = translateError(error)
+                    } finally {
+                        isLoading = false
+                    }
+
+                    onComplete(success)
+                }
+            }
         }
     }
 
-    private fun executeMock(
-        action: () -> Unit
-    ) {
-        if (isLoading) return
+    private fun translateError(error: Exception): String {
+        if (
+            error is IllegalStateException &&
+            error.message?.startsWith(
+                "Tài khoản Firebase đã được tạo"
+            ) == true
+        ) {
+            return error.message
+                ?: "Chưa lưu được hồ sơ người dùng."
+        }
 
-        isLoading = true
-        isSuccess = false
-        errorMessage = null
+        if (error is FirebaseNetworkException) {
+            return "Không có kết nối mạng. Vui lòng thử lại."
+        }
 
-        viewModelScope.launch {
-            try {
-                // Giả lập thời gian xử lý.
-                delay(500)
-                action()
-            } catch (error: Exception) {
-                errorMessage =
-                    "Đã xảy ra lỗi trong quá trình thử nghiệm UI."
-            } finally {
-                isLoading = false
+        if (error is FirebaseAuthException) {
+            return when (error.errorCode) {
+                "ERROR_EMAIL_ALREADY_IN_USE" ->
+                    "Email này đã được đăng ký."
+
+                "ERROR_INVALID_EMAIL" ->
+                    "Địa chỉ email không hợp lệ."
+
+                "ERROR_WRONG_PASSWORD",
+                "ERROR_USER_NOT_FOUND",
+                "ERROR_INVALID_CREDENTIAL",
+                "ERROR_INVALID_LOGIN_CREDENTIALS" ->
+                    "Email hoặc mật khẩu không chính xác."
+
+                "ERROR_WEAK_PASSWORD" ->
+                    "Mật khẩu chưa đủ mạnh."
+
+                "ERROR_USER_DISABLED" ->
+                    "Tài khoản đã bị vô hiệu hóa."
+
+                "ERROR_TOO_MANY_REQUESTS" ->
+                    "Bạn thử quá nhiều lần. Vui lòng thử lại sau."
+
+                else ->
+                    "Không thể xác thực tài khoản. Vui lòng thử lại."
             }
         }
+
+        return "Không thể hoàn tất yêu cầu. " +
+                (error.message ?: "Vui lòng thử lại.")
     }
 }
