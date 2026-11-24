@@ -26,7 +26,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
+import com.example.dattcnpm.data.device.DeviceManager
 class AuthViewModel : ViewModel() {
 
     var isLoading by mutableStateOf(false)
@@ -422,19 +422,43 @@ class AuthViewModel : ViewModel() {
         }
     }
 
+
     fun signOut(
         context: Context,
         onComplete: () -> Unit
     ) {
         if (isLoading) return
 
-        AuthRepository.signOut()
-        UserProfileManager.setLoggedIn(context, false)
-
-        isSuccess = true
+        isLoading = true
+        isSuccess = false
         errorMessage = null
-        onComplete()
+
+        viewModelScope.launch {
+            try {
+                // Xóa document thiết bị trước khi đăng xuất Firebase.
+                DeviceManager.removeDeviceAndSignOut(
+                    context.applicationContext
+                )
+
+                isSuccess = true
+                onComplete()
+
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+
+            } catch (error: Exception) {
+                errorMessage =
+                    "Chưa gỡ được thiết bị khỏi tài khoản. " +
+                            "Vui lòng kiểm tra Internet và thử lại."
+
+                isSuccess = false
+
+            } finally {
+                isLoading = false
+            }
+        }
     }
+
 
     private fun isValidEmail(email: String): Boolean {
         return email.isNotBlank() &&

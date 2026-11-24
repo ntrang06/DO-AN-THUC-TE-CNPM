@@ -1,6 +1,8 @@
+
 package com.example.dattcnpm
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -12,21 +14,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.dattcnpm.notifications.NotificationPermissionRequester
 import com.example.dattcnpm.ui.components.MMRABottomBar
 import com.example.dattcnpm.ui.navigation.MMRADestinations
 import com.example.dattcnpm.ui.navigation.MMRANavHost
 import com.example.dattcnpm.ui.navigation.mmraBottomNavItems
 import com.example.dattcnpm.ui.theme.MMRATheme
+import com.google.firebase.messaging.FirebaseMessaging
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         enableEdgeToEdge()
 
         setContent {
@@ -39,12 +46,54 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MMRAApp() {
+
     val navController = rememberNavController()
 
-    val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route
+    // Yêu cầu quyền thông báo trên Android 13 trở lên.
+    NotificationPermissionRequester()
 
-    // Chỉ hiện thanh điều hướng ở các màn chính, ngoại trừ Quét thuốc.
+    // Kiểm tra Firebase Cloud Messaging khi mở ứng dụng.
+    LaunchedEffect(Unit) {
+        FirebaseMessaging.getInstance()
+            .token
+            .addOnCompleteListener { task ->
+
+                if (task.isSuccessful) {
+
+                    val token = task.result.orEmpty()
+
+                    if (token.isNotBlank()) {
+                        Log.d(
+                            "MMRA_FCM",
+                            "FCM token đã lấy thành công. " +
+                                    "Độ dài: ${token.length}"
+                        )
+                    } else {
+                        Log.w(
+                            "MMRA_FCM",
+                            "FCM token trả về rỗng."
+                        )
+                    }
+
+                } else {
+                    Log.e(
+                        "MMRA_FCM",
+                        "Không lấy được FCM token.",
+                        task.exception
+                    )
+                }
+            }
+    }
+
+    val backStackEntry by navController
+        .currentBackStackEntryAsState()
+
+    val currentRoute = backStackEntry
+        ?.destination
+        ?.route
+
+    // Chỉ hiển thị Bottom Bar tại các màn chính.
+    // Riêng màn quét thuốc không hiển thị Bottom Bar.
     val showBottomBar = mmraBottomNavItems.any {
         it.route == currentRoute
     } && currentRoute != MMRADestinations.SCAN
@@ -52,8 +101,11 @@ fun MMRAApp() {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
+
         bottomBar = {
+
             if (showBottomBar) {
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -63,14 +115,23 @@ fun MMRAApp() {
                             vertical = 8.dp
                         )
                 ) {
+
                     MMRABottomBar(
                         currentRoute = currentRoute ?: "",
+
                         onTabSelected = { route ->
+
                             if (route != currentRoute) {
+
                                 navController.navigate(route) {
-                                    popUpTo(navController.graph.startDestinationId) {
+
+                                    popUpTo(
+                                        navController.graph
+                                            .findStartDestination().id
+                                    ) {
                                         saveState = true
                                     }
+
                                     launchSingleTop = true
                                     restoreState = true
                                 }
@@ -81,8 +142,10 @@ fun MMRAApp() {
             }
         }
     ) { innerPadding ->
+
         MMRANavHost(
             navController = navController,
+
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
