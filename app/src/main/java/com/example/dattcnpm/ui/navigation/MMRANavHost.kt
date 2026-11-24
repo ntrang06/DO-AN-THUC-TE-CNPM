@@ -1,3 +1,4 @@
+
 package com.example.dattcnpm.ui.navigation
 
 import android.net.Uri
@@ -19,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -37,6 +39,7 @@ import com.example.dattcnpm.ui.screens.home.HomeScreen
 import com.example.dattcnpm.ui.screens.scan.ScanScreen
 import com.example.dattcnpm.ui.screens.setup.SetupDisplayPreferenceScreen
 import com.example.dattcnpm.ui.screens.setup.SetupTargetUserScreen
+import com.example.dattcnpm.ui.viewmodel.AuthViewModel
 
 @Composable
 fun MMRANavHost(
@@ -44,16 +47,21 @@ fun MMRANavHost(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+
     UserProfileManager.init(context)
 
-    var mockEmail by remember { mutableStateOf("") }
-    var mockPassword by remember { mutableStateOf("") }
-    var mockName by remember { mutableStateOf("") }
-    var registerError by remember { mutableStateOf<String?>(null) }
-    var loginError by remember { mutableStateOf<String?>(null) }
+    val authViewModel: AuthViewModel = viewModel()
 
     var setupPreferences by remember {
         mutableStateOf(InitialSetupPreferences())
+    }
+
+    val showNotAvailable: (String) -> Unit = { feature ->
+        Toast.makeText(
+            context,
+            "$feature chưa được tích hợp Firebase.",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     val goBack: () -> Unit = {
@@ -61,11 +69,22 @@ fun MMRANavHost(
     }
 
     val openRegister: () -> Unit = {
-        registerError = null
-        navController.navigate(MMRADestinations.REGISTER)
+        if (!authViewModel.isLoading) {
+            authViewModel.clearError()
+            navController.navigate(MMRADestinations.REGISTER)
+        }
     }
 
-    val navigateAfterLogin: () -> Unit = {
+    val navigateAfterLogin: () -> Unit = navigate@{
+        if (!authViewModel.isLoggedIn) {
+            Toast.makeText(
+                context,
+                "Bạn cần đăng nhập trước.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return@navigate
+        }
+
         UserProfileManager.setLoggedIn(context, true)
         UserProfileManager.saveProfileInfo(context)
 
@@ -85,7 +104,7 @@ fun MMRANavHost(
         }
     }
 
-    // Trang chủ và Lịch uống mở cùng một màn chi tiết liều.
+    // Trang chủ và Lịch uống cùng mở màn chi tiết liều.
     val openDose: (String) -> Unit = { doseId ->
         navController.navigate(
             "reminder/${Uri.encode(doseId)}?readOnly=false"
@@ -99,54 +118,85 @@ fun MMRANavHost(
         startDestination = MMRADestinations.LOGIN,
         modifier = modifier
     ) {
+
+        // -------------------------------
+        // WELCOME
+        // -------------------------------
+
         composable(MMRADestinations.WELCOME) {
             WelcomeScreen(
                 onLoginClick = {
+                    authViewModel.clearError()
                     navController.navigate(MMRADestinations.LOGIN)
                 },
                 onRegisterClick = openRegister
             )
         }
 
+        // -------------------------------
+        // LOGIN - CHỌN PHƯƠNG THỨC
+        // -------------------------------
+
         composable(MMRADestinations.LOGIN) {
             LoginScreen(
                 onBackClick = goBack,
-                onGoogleSignInClick = {},
+
+                onGoogleSignInClick = {
+                    showNotAvailable("Đăng nhập Google")
+                },
+
                 onPhoneSignInClick = {
-                    navController.navigate(
-                        MMRADestinations.PHONE_LOGIN
-                    )
+                    showNotAvailable("Đăng nhập số điện thoại")
                 },
+
                 onEmailSignInClick = {
-                    loginError = null
-                    navController.navigate(
-                        MMRADestinations.EMAIL_LOGIN
-                    )
+                    if (!authViewModel.isLoading) {
+                        authViewModel.clearError()
+                        navController.navigate(
+                            MMRADestinations.EMAIL_LOGIN
+                        )
+                    }
                 },
+
                 onRegisterClick = openRegister
             )
         }
 
+        // -------------------------------
+        // REGISTER - FIREBASE AUTH
+        // -------------------------------
+
         composable(MMRADestinations.REGISTER) {
             RegisterScreen(
-                onBackClick = goBack,
-                onRegisterClick = { fullName, email, password ->
-                    val cleanEmail = email.trim()
+                onBackClick = {
+                    if (!authViewModel.isLoading) {
+                        goBack()
+                    }
+                },
 
-                    if (
-                        mockEmail.isNotBlank() &&
-                        mockEmail.equals(cleanEmail, ignoreCase = true)
-                    ) {
-                        registerError = "Email này đã được đăng ký."
-                    } else {
-                        mockName = fullName
-                        mockEmail = cleanEmail
-                        mockPassword = password
-                        registerError = null
-                        loginError = null
+                onRegisterClick = { fullName, email, password ->
+                    authViewModel.signUp(
+                        name = fullName,
+                        email = email,
+                        pass = password,
+                        context = context
+                    ) { success ->
+                        if (success) {
+                            navigateAfterLogin()
+                        }
+                    }
+                },
+
+                onGoogleClick = {
+                    showNotAvailable("Đăng ký bằng Google")
+                },
+
+                onLoginClick = {
+                    if (!authViewModel.isLoading) {
+                        authViewModel.clearError()
 
                         navController.navigate(
-                            MMRADestinations.EMAIL_LOGIN
+                            MMRADestinations.LOGIN
                         ) {
                             popUpTo(MMRADestinations.REGISTER) {
                                 inclusive = true
@@ -154,76 +204,89 @@ fun MMRANavHost(
                         }
                     }
                 },
-                onGoogleClick = {},
-                onLoginClick = {
-                    navController.navigate(MMRADestinations.LOGIN) {
-                        popUpTo(MMRADestinations.REGISTER) {
-                            inclusive = true
-                        }
-                    }
-                },
-                externalError = registerError
+
+                isLoading = authViewModel.isLoading,
+                externalError = authViewModel.errorMessage
             )
         }
+
+        // -------------------------------
+        // EMAIL LOGIN - FIREBASE AUTH
+        // -------------------------------
 
         composable(MMRADestinations.EMAIL_LOGIN) {
             EmailLoginScreen(
-                onBackClick = goBack,
-                onLoginClick = { email, password ->
-                    val isValidAccount =
-                        mockEmail.isNotBlank() &&
-                                email.equals(mockEmail, ignoreCase = true) &&
-                                password == mockPassword
-
-                    if (isValidAccount) {
-                        UserProfileManager.name = mockName
-                        UserProfileManager.email = mockEmail
-                        UserProfileManager.role = "Người uống thuốc"
-                        loginError = null
-                        navigateAfterLogin()
-                    } else {
-                        loginError = "Email hoặc mật khẩu không chính xác."
+                onBackClick = {
+                    if (!authViewModel.isLoading) {
+                        goBack()
                     }
                 },
+
+                onLoginClick = { email, password ->
+                    authViewModel.signIn(
+                        email = email,
+                        pass = password,
+                        context = context
+                    ) { success ->
+                        if (success) {
+                            navigateAfterLogin()
+                        }
+                    }
+                },
+
                 onOtpLoginClick = {
-                    navController.navigate(
-                        MMRADestinations.VERIFY_EMAIL
-                    )
+                    showNotAvailable("Đăng nhập bằng OTP")
                 },
-                onGoogleLoginClick = {},
+
+                onGoogleLoginClick = {
+                    showNotAvailable("Đăng nhập Google")
+                },
+
                 onForgotPasswordClick = {
-                    navController.navigate(
-                        MMRADestinations.FORGOT_PASSWORD
-                    )
+                    if (!authViewModel.isLoading) {
+                        authViewModel.clearError()
+                        navController.navigate(
+                            MMRADestinations.FORGOT_PASSWORD
+                        )
+                    }
                 },
+
                 onRegisterClick = openRegister,
-                externalError = loginError
+
+                isLoading = authViewModel.isLoading,
+                externalError = authViewModel.errorMessage
             )
         }
+
+        // -------------------------------
+        // PHONE LOGIN - CHƯA TÍCH HỢP
+        // -------------------------------
 
         composable(MMRADestinations.PHONE_LOGIN) {
             PhoneLoginScreen(
                 onBackClick = goBack,
+
                 onLoginClick = {
-                    UserProfileManager.name = "Người dùng"
-                    UserProfileManager.phone = "0912345678"
-                    UserProfileManager.email = ""
-                    UserProfileManager.role = "Người uống thuốc"
-                    navigateAfterLogin()
+                    showNotAvailable("Đăng nhập số điện thoại")
                 },
+
                 onOtpLoginClick = {
-                    navController.navigate(
-                        MMRADestinations.VERIFY_PHONE
-                    )
+                    showNotAvailable("Xác thực OTP điện thoại")
                 },
+
                 onForgotPasswordClick = {
                     navController.navigate(
                         MMRADestinations.FORGOT_PASSWORD
                     )
                 },
+
                 onRegisterClick = openRegister
             )
         }
+
+        // -------------------------------
+        // EMAIL / PHONE VERIFICATION
+        // -------------------------------
 
         composable(MMRADestinations.VERIFY_EMAIL) {
             PlaceholderScreen(
@@ -241,6 +304,7 @@ fun MMRANavHost(
             )
         }
 
+        // Phần đặt lại mật khẩu Firebase sẽ tích hợp sau.
         composable(MMRADestinations.FORGOT_PASSWORD) {
             PlaceholderScreen(
                 title = "Quên mật khẩu",
@@ -249,17 +313,127 @@ fun MMRANavHost(
             )
         }
 
-        composable(MMRADestinations.INITIAL_SETUP_TARGET) {
-            SetupTargetUserScreen(
-                initialSelectedRoles = setupPreferences.selectedRoles,
-                onBackClick = {},
-                onContinueClick = { roles ->
-                    setupPreferences = setupPreferences.copy(
-                        selectedRoles = roles
-                    )
+        // -------------------------------
+        // INITIAL SETUP - TARGET USER
+        // -------------------------------
 
+        composable(MMRADestinations.INITIAL_SETUP_TARGET) {
+            if (authViewModel.isLoggedIn) {
+                SetupTargetUserScreen(
+                    initialSelectedRoles = setupPreferences.selectedRoles,
+
+                    onBackClick = {},
+
+                    onContinueClick = { roles ->
+                        setupPreferences = setupPreferences.copy(
+                            selectedRoles = roles
+                        )
+
+                        navController.navigate(
+                            MMRADestinations.INITIAL_SETUP_DISPLAY
+                        ) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            } else {
+                AuthenticationRequiredScreen(
+                    onLoginClick = {
+                        navController.navigate(
+                            MMRADestinations.LOGIN
+                        ) {
+                            popUpTo(0)
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+        }
+
+        // -------------------------------
+        // INITIAL SETUP - DISPLAY
+        // -------------------------------
+
+        composable(MMRADestinations.INITIAL_SETUP_DISPLAY) {
+            if (authViewModel.isLoggedIn) {
+                SetupDisplayPreferenceScreen(
+                    initialLargeText =
+                        setupPreferences.isLargeTextEnabled,
+
+                    initialVoiceGuidance =
+                        setupPreferences.isVoiceGuidanceEnabled,
+
+                    onBackClick = goBack,
+
+                    onCompleteClick = { isLargeText, isVoiceGuidance ->
+                        if (!authViewModel.isLoggedIn) {
+                            showNotAvailable(
+                                "Phiên đăng nhập đã kết thúc"
+                            )
+                        } else {
+                            setupPreferences = setupPreferences.copy(
+                                isLargeTextEnabled = isLargeText,
+                                isVoiceGuidanceEnabled = isVoiceGuidance
+                            )
+
+                            UserProfileManager.setSetupCompleted(
+                                context,
+                                true
+                            )
+
+                            UserProfileManager.setLoggedIn(
+                                context,
+                                true
+                            )
+
+                            UserProfileManager.saveProfileInfo(context)
+
+                            navController.navigate(
+                                MMRADestinations.HOME
+                            ) {
+                                popUpTo(
+                                    MMRADestinations.INITIAL_SETUP_TARGET
+                                ) {
+                                    inclusive = true
+                                }
+                                launchSingleTop = true
+                            }
+                        }
+                    }
+                )
+            } else {
+                AuthenticationRequiredScreen(
+                    onLoginClick = {
+                        navController.navigate(
+                            MMRADestinations.LOGIN
+                        ) {
+                            popUpTo(0)
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+        }
+
+        // -------------------------------
+        // HOME
+        // -------------------------------
+
+        composable(MMRADestinations.HOME) {
+            HomeScreen(
+                onViewAllClick = {
                     navController.navigate(
-                        MMRADestinations.INITIAL_SETUP_DISPLAY
+                        MMRADestinations.SCHEDULE
+                    ) {
+                        launchSingleTop = true
+                    }
+                },
+
+                onViewDoseClick = openDose,
+
+                onAccountClick = {
+                    navController.navigate(
+                        MMRADestinations.MY_ACCOUNT
                     ) {
                         launchSingleTop = true
                     }
@@ -267,52 +441,16 @@ fun MMRANavHost(
             )
         }
 
-        composable(MMRADestinations.INITIAL_SETUP_DISPLAY) {
-            SetupDisplayPreferenceScreen(
-                initialLargeText = setupPreferences.isLargeTextEnabled,
-                initialVoiceGuidance =
-                    setupPreferences.isVoiceGuidanceEnabled,
-                onBackClick = goBack,
-                onCompleteClick = { isLargeText, isVoiceGuidance ->
-                    setupPreferences = setupPreferences.copy(
-                        isLargeTextEnabled = isLargeText,
-                        isVoiceGuidanceEnabled = isVoiceGuidance
-                    )
+        // -------------------------------
+        // MEDICINE / SCHEDULE / HISTORY
+        // -------------------------------
 
-                    UserProfileManager.setSetupCompleted(context, true)
-                    UserProfileManager.setLoggedIn(context, true)
-                    UserProfileManager.saveProfileInfo(context)
-
-                    navController.navigate(MMRADestinations.HOME) {
-                        popUpTo(MMRADestinations.INITIAL_SETUP_TARGET) {
-                            inclusive = true
-                        }
-                        launchSingleTop = true
-                    }
-                }
-            )
-        }
-
-        composable(MMRADestinations.HOME) {
-            HomeScreen(
-                onViewAllClick = {
-                    navController.navigate(MMRADestinations.SCHEDULE) {
-                        launchSingleTop = true
-                    }
-                },
-                onViewDoseClick = openDose,
-                onAccountClick = {
-                    navController.navigate(MMRADestinations.MY_ACCOUNT) {
-                        launchSingleTop = true
-                    }
-                }
-            )
-        }
-
-        // Thuốc, lịch uống, lịch sử và chi tiết liều.
         personalMedicationRoutes(navController, context)
 
-        // Camera → xem ảnh → xử lý mẫu → kết quả → nhập thuốc.
+        // -------------------------------
+        // SCAN
+        // -------------------------------
+
         composable(MMRADestinations.SCAN) {
             ScanScreen(
                 onScanSuccess = { result ->
@@ -327,12 +465,22 @@ fun MMRANavHost(
                         ?.set(
                             "scanPrefill",
                             Bundle().apply {
-                                putString("name", result.medicineName)
-                                putString("dosage", result.dosage)
-                                putString("form", result.dosageForm)
+                                putString(
+                                    "name",
+                                    result.medicineName
+                                )
+                                putString(
+                                    "dosage",
+                                    result.dosage
+                                )
+                                putString(
+                                    "form",
+                                    result.dosageForm
+                                )
                             }
                         )
                 },
+
                 onManualInputClick = {
                     navController.navigate(
                         MMRADestinations.MANUAL_MEDICINE
@@ -340,9 +488,12 @@ fun MMRANavHost(
                         launchSingleTop = true
                     }
                 },
+
                 onClose = {
                     if (!navController.popBackStack()) {
-                        navController.navigate(MMRADestinations.HOME) {
+                        navController.navigate(
+                            MMRADestinations.HOME
+                        ) {
                             popUpTo(MMRADestinations.SCAN) {
                                 inclusive = true
                             }
@@ -353,6 +504,10 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // FAMILY
+        // -------------------------------
+
         composable(MMRADestinations.FAMILY) {
             FamilyScreen(
                 onConnectClick = {
@@ -362,6 +517,7 @@ fun MMRANavHost(
                         launchSingleTop = true
                     }
                 },
+
                 onMemberClick = { memberId ->
                     navController.navigate(
                         MMRADestinations.familyMemberDetail(
@@ -374,6 +530,10 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // FAMILY MEMBER DETAIL
+        // -------------------------------
+
         composable(MMRADestinations.FAMILY_MEMBER_DETAIL) { entry ->
             val memberId = entry.arguments?.getString("memberId")
 
@@ -381,7 +541,9 @@ fun MMRANavHost(
                 RelativeTrackingScreen(
                     navController = navController,
                     memberId = memberId,
+
                     onBackClick = goBack,
+
                     onRemindClick = {
                         Toast.makeText(
                             context,
@@ -393,9 +555,14 @@ fun MMRANavHost(
             }
         }
 
+        // -------------------------------
+        // FAMILY INVITE
+        // -------------------------------
+
         composable(MMRADestinations.FAMILY_INVITE) {
             ConnectFamilyScreen(
                 onBackClick = goBack,
+
                 onScanQRClick = {
                     Toast.makeText(
                         context,
@@ -403,6 +570,7 @@ fun MMRANavHost(
                         Toast.LENGTH_SHORT
                     ).show()
                 },
+
                 onSubmitCode = { code ->
                     val message = if (
                         code.equals("MMRA-8899", ignoreCase = true)
@@ -421,6 +589,10 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // ACCOUNT
+        // -------------------------------
+
         composable(MMRADestinations.ACCOUNT) {
             AccountDestination(navController)
         }
@@ -429,73 +601,117 @@ fun MMRANavHost(
             AccountDestination(navController)
         }
 
+        // -------------------------------
+        // AVATAR OPTIONS
+        // -------------------------------
+
         composable(MMRADestinations.MY_ACCOUNT_AVATAR_OPTIONS) {
             AvatarOptionsScreen(
-                avatarBitmap = UserProfileManager.currentAvatarBitmap,
+                avatarBitmap =
+                    UserProfileManager.currentAvatarBitmap,
+
                 onTakePhotoClick = {
                     navController.navigate(
                         MMRADestinations.CAPTURE_AVATAR
                     )
                 },
+
                 onPickGalleryClick = {
                     navController.navigate(
                         MMRADestinations.GALLERY_PICKER
                     )
                 },
+
                 onDeletePhotoClick = {
                     UserProfileManager.deleteAvatar(context)
+
                     navController.navigate(
                         MMRADestinations.AVATAR_DELETED_SUCCESS
                     )
                 },
+
                 onCancelClick = goBack
             )
         }
+
+        // -------------------------------
+        // CAPTURE AVATAR
+        // -------------------------------
 
         composable(MMRADestinations.CAPTURE_AVATAR) {
             CaptureAvatarScreen(
                 onBackClick = goBack,
+
                 onPhotoCaptured = { bitmap ->
                     UserProfileManager.tempCapturedBitmap = bitmap
+
                     navController.navigate(
                         MMRADestinations.REVIEW_CAPTURED_PHOTO
                     )
                 },
+
                 onCancelClick = goBack
             )
         }
 
+        // -------------------------------
+        // REVIEW CAPTURED PHOTO
+        // -------------------------------
+
         composable(MMRADestinations.REVIEW_CAPTURED_PHOTO) {
             ReviewCapturedPhotoScreen(
-                capturedBitmap = UserProfileManager.tempCapturedBitmap,
+                capturedBitmap =
+                    UserProfileManager.tempCapturedBitmap,
+
                 onBackClick = goBack,
+
                 onContinueCropClick = {
-                    navController.navigate(MMRADestinations.CROP_AVATAR)
+                    navController.navigate(
+                        MMRADestinations.CROP_AVATAR
+                    )
                 },
+
                 onRetakeClick = goBack
             )
         }
 
+        // -------------------------------
+        // GALLERY PICKER
+        // -------------------------------
+
         composable(MMRADestinations.GALLERY_PICKER) {
             GalleryPickerScreen(
                 onBackClick = goBack,
+
                 onPhotoSelected = { bitmap ->
                     UserProfileManager.tempCapturedBitmap = bitmap
-                    navController.navigate(MMRADestinations.CROP_AVATAR)
+
+                    navController.navigate(
+                        MMRADestinations.CROP_AVATAR
+                    )
                 },
+
                 onCancelClick = goBack
             )
         }
 
+        // -------------------------------
+        // CROP AVATAR
+        // -------------------------------
+
         composable(MMRADestinations.CROP_AVATAR) {
             CropAvatarScreen(
-                inputBitmap = UserProfileManager.tempCapturedBitmap,
+                inputBitmap =
+                    UserProfileManager.tempCapturedBitmap,
+
                 onBackClick = goBack,
+
                 onConfirmCrop = { croppedBitmap ->
                     UserProfileManager.saveAvatarBitmap(
                         context,
                         croppedBitmap
                     )
+
                     navController.navigate(
                         MMRADestinations.AVATAR_UPDATED_SUCCESS
                     )
@@ -503,9 +719,15 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // AVATAR UPDATED
+        // -------------------------------
+
         composable(MMRADestinations.AVATAR_UPDATED_SUCCESS) {
             AvatarUpdatedScreen(
-                updatedBitmap = UserProfileManager.currentAvatarBitmap,
+                updatedBitmap =
+                    UserProfileManager.currentAvatarBitmap,
+
                 onBackToAccountClick = {
                     navController.popBackStack(
                         MMRADestinations.MY_ACCOUNT,
@@ -514,6 +736,10 @@ fun MMRANavHost(
                 }
             )
         }
+
+        // -------------------------------
+        // AVATAR DELETED
+        // -------------------------------
 
         composable(MMRADestinations.AVATAR_DELETED_SUCCESS) {
             AvatarDeletedScreen(
@@ -526,6 +752,10 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // EDIT NAME
+        // -------------------------------
+
         composable(MMRADestinations.EDIT_NAME) {
             EditNameScreen(
                 onBackClick = goBack,
@@ -533,6 +763,10 @@ fun MMRANavHost(
                 onCancelClick = goBack
             )
         }
+
+        // -------------------------------
+        // EDIT EMAIL
+        // -------------------------------
 
         composable(MMRADestinations.EDIT_EMAIL) {
             EditEmailScreen(
@@ -542,6 +776,10 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // EDIT PHONE
+        // -------------------------------
+
         composable(MMRADestinations.EDIT_PHONE) {
             EditPhoneScreen(
                 onBackClick = goBack,
@@ -550,18 +788,31 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // CHANGE PASSWORD
+        // -------------------------------
+
         composable(MMRADestinations.CHANGE_PASSWORD) {
             ChangePasswordScreen(
                 onBackClick = goBack,
-                onSaveSuccess = { goBack() },
+
+                onSaveSuccess = {
+                    goBack()
+                },
+
                 onForgotPasswordClick = {
                     navController.navigate(
                         MMRADestinations.FORGOT_PASSWORD
                     )
                 },
+
                 onCancelClick = goBack
             )
         }
+
+        // -------------------------------
+        // NOTIFICATION SETTINGS
+        // -------------------------------
 
         composable(MMRADestinations.NOTIFICATION_SETTINGS) {
             NotificationSettingsScreen(
@@ -570,10 +821,18 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // ACCESSIBILITY SETTINGS
+        // -------------------------------
+
         composable(MMRADestinations.ACCESSIBILITY_SETTINGS) {
             AccessibilitySettingsScreen(
                 onBackClick = goBack,
-                onSaveSuccess = { goBack() },
+
+                onSaveSuccess = {
+                    goBack()
+                },
+
                 onResetClick = {
                     navController.navigate(
                         MMRADestinations.INITIAL_SETUP_TARGET
@@ -582,6 +841,10 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // VOICE GUIDANCE SETTINGS
+        // -------------------------------
+
         composable(MMRADestinations.VOICE_GUIDANCE_SETTINGS) {
             VoiceGuidanceSettingsScreen(
                 onBackClick = goBack,
@@ -589,11 +852,18 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // MANAGE USAGE MODE
+        // -------------------------------
+
         composable(MMRADestinations.MANAGE_USAGE_MODE) {
             ManageUsageModeScreen(
-                initialSelectedRoles = setupPreferences.selectedRoles,
+                initialSelectedRoles =
+                    setupPreferences.selectedRoles,
+
                 onBackClick = goBack,
                 onCancelClick = goBack,
+
                 onConfirmSave = { updatedRoles ->
                     setupPreferences = setupPreferences.copy(
                         selectedRoles = updatedRoles
@@ -603,13 +873,23 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // SWITCH ACCOUNT
+        // -------------------------------
+
         composable(MMRADestinations.SWITCH_ACCOUNT) {
             SwitchAccountDestination(
                 onBack = goBack,
-                onSignedOut = {
-                    UserProfileManager.setLoggedIn(context, false)
 
-                    navController.navigate(MMRADestinations.LOGIN) {
+                onSignedOut = {
+                    UserProfileManager.setLoggedIn(
+                        context,
+                        false
+                    )
+
+                    navController.navigate(
+                        MMRADestinations.LOGIN
+                    ) {
                         popUpTo(0) {
                             inclusive = true
                         }
@@ -619,13 +899,23 @@ fun MMRANavHost(
             )
         }
 
+        // -------------------------------
+        // LOGOUT
+        // -------------------------------
+
         composable(MMRADestinations.LOGOUT_CONFIRMATION) {
             LogoutDestination(
                 onBack = goBack,
-                onSignedOut = {
-                    UserProfileManager.setLoggedIn(context, false)
 
-                    navController.navigate(MMRADestinations.WELCOME) {
+                onSignedOut = {
+                    UserProfileManager.setLoggedIn(
+                        context,
+                        false
+                    )
+
+                    navController.navigate(
+                        MMRADestinations.WELCOME
+                    ) {
                         popUpTo(0) {
                             inclusive = true
                         }
@@ -637,53 +927,82 @@ fun MMRANavHost(
     }
 }
 
+// ------------------------------------
+// ACCOUNT DESTINATION
+// ------------------------------------
+
 @Composable
 private fun AccountDestination(
     navController: NavHostController
 ) {
     MyAccountScreen(
-        avatarBitmap = UserProfileManager.currentAvatarBitmap,
+        avatarBitmap =
+            UserProfileManager.currentAvatarBitmap,
+
         onBackClick = {
             navController.popBackStack()
         },
+
         onAvatarOptionsClick = {
             navController.navigate(
                 MMRADestinations.MY_ACCOUNT_AVATAR_OPTIONS
             )
         },
+
         onEditNameClick = {
-            navController.navigate(MMRADestinations.EDIT_NAME)
+            navController.navigate(
+                MMRADestinations.EDIT_NAME
+            )
         },
+
         onEditEmailClick = {
-            navController.navigate(MMRADestinations.EDIT_EMAIL)
+            navController.navigate(
+                MMRADestinations.EDIT_EMAIL
+            )
         },
+
         onEditPhoneClick = {
-            navController.navigate(MMRADestinations.EDIT_PHONE)
+            navController.navigate(
+                MMRADestinations.EDIT_PHONE
+            )
         },
+
         onChangePasswordClick = {
-            navController.navigate(MMRADestinations.CHANGE_PASSWORD)
+            navController.navigate(
+                MMRADestinations.CHANGE_PASSWORD
+            )
         },
+
         onNotificationsClick = {
             navController.navigate(
                 MMRADestinations.NOTIFICATION_SETTINGS
             )
         },
+
         onAccessibilityClick = {
             navController.navigate(
                 MMRADestinations.ACCESSIBILITY_SETTINGS
             )
         },
+
         onVoiceGuidanceClick = {
             navController.navigate(
                 MMRADestinations.VOICE_GUIDANCE_SETTINGS
             )
         },
+
         onUsageModeClick = {
-            navController.navigate(MMRADestinations.MANAGE_USAGE_MODE)
+            navController.navigate(
+                MMRADestinations.MANAGE_USAGE_MODE
+            )
         },
+
         onSwitchAccountClick = {
-            navController.navigate(MMRADestinations.SWITCH_ACCOUNT)
+            navController.navigate(
+                MMRADestinations.SWITCH_ACCOUNT
+            )
         },
+
         onLogoutClick = {
             navController.navigate(
                 MMRADestinations.LOGOUT_CONFIRMATION
@@ -691,6 +1010,37 @@ private fun AccountDestination(
         }
     )
 }
+
+// ------------------------------------
+// AUTHENTICATION REQUIRED
+// ------------------------------------
+
+@Composable
+private fun AuthenticationRequiredScreen(
+    onLoginClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "Vui lòng đăng nhập",
+            style = MaterialTheme.typography.headlineSmall
+        )
+
+        TextButton(onClick = onLoginClick) {
+            Text("Đến màn đăng nhập")
+        }
+    }
+}
+
+// ------------------------------------
+// PLACEHOLDER
+// ------------------------------------
 
 @Composable
 private fun PlaceholderScreen(
@@ -702,6 +1052,7 @@ private fun PlaceholderScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp),
+
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
