@@ -2,61 +2,76 @@ package com.example.dattcnpm.ui.screens.scan
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview as ComposePreview
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.navigation.NavHostController
-import com.example.dattcnpm.R
-
-private val DarkTealBg = Color(0xFF132A24)
-private val PrimaryTeal = Color(0xFF0F5145)
-private val LightMint = Color(0xFFD7EFE9)
+import java.io.File
 
 @Composable
 fun ScanCameraScreen(
-    @Suppress("UNUSED_PARAMETER") navController: NavHostController? = null,
-    onCloseClick: () -> Unit = {},
-    onFlashClick: () -> Unit = {},
-    onCaptureClick: () -> Unit = {},
-    onManualInputClick: () -> Unit = {},
-    onGalleryClick: () -> Unit = {},
+    onCaptureClick: (Uri) -> Unit,
+    onPickImageClick: () -> Unit,
+    onManualInputClick: () -> Unit,
+    onCloseClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val isPreviewMode = LocalInspectionMode.current
-    val imageCapture = remember { ImageCapture.Builder().build() }
+    val mainExecutor = remember(context) {
+        ContextCompat.getMainExecutor(context)
+    }
 
-    // Logic kiểm tra và yêu cầu quyền Camera
-    var hasCameraPermission by remember {
+    var hasPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
                 context,
@@ -65,409 +80,342 @@ fun ScanCameraScreen(
         )
     }
 
+    var flashEnabled by remember { mutableStateOf(false) }
+    var isCapturing by remember { mutableStateOf(false) }
+    var cameraReady by remember { mutableStateOf(false) }
+    var camera by remember { mutableStateOf<Camera?>(null) }
+
+    val previewView = remember(context) {
+        PreviewView(context).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            implementationMode =
+                PreviewView.ImplementationMode.COMPATIBLE
+        }
+    }
+
+    val imageCapture = remember {
+        ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .build()
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasCameraPermission = isGranted
-    }
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasPermission = granted
 
-    LaunchedEffect(Unit) {
-        if (!hasCameraPermission && !isPreviewMode) {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
+        if (!granted) {
+            Toast.makeText(
+                context,
+                "Cần cấp quyền camera để chụp ảnh thuốc.",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
-    // Photo Picker launcher chọn ảnh từ thư viện
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            onGalleryClick()
-        }
-    }
+    // Mở camera khi có quyền; giải phóng khi rời màn hình.
+    DisposableEffect(hasPermission, lifecycleOwner, previewView) {
+        var disposed = false
+        var provider: ProcessCameraProvider? = null
+        var boundPreview: Preview? = null
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkTealBg)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-    ) {
-        // --- 1. TOP BAR ---
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(DarkTealBg)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                IconButton(
-                    onClick = onCloseClick,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .background(Color.White.copy(alpha = 0.12f), CircleShape)
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_close),
-                        contentDescription = "Đóng",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+        cameraReady = false
 
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = "Quét vỏ hộp thuốc",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "Bước 1 / 3 • Nhận diện thuốc",
-                        fontSize = 14.sp,
-                        color = Color.White.copy(alpha = 0.7f)
-                    )
-                }
-            }
+        if (hasPermission) {
+            val future = ProcessCameraProvider.getInstance(context)
 
-            IconButton(
-                onClick = onFlashClick,
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(Color.White.copy(alpha = 0.12f), CircleShape)
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_zap),
-                    contentDescription = "Bật đèn flash",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-
-        // --- 2. VÙNG CAMERA + KHUNG NGẮM ---
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .background(Color.Black)
-        ) {
-            if (!isPreviewMode && !hasCameraPermission) {
-                // Giao diện thông báo khi chưa được cấp quyền Camera
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_camera),
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Cần cấp quyền camera để quét vỏ hộp thuốc",
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryTeal),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            text = "Cấp quyền camera",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            } else if (!isPreviewMode) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        PreviewView(ctx).apply {
-                            scaleType = PreviewView.ScaleType.FILL_CENTER
-                        }
-                    },
-                    update = { previewView ->
-                        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-                        cameraProviderFuture.addListener({
-                            val cameraProvider = cameraProviderFuture.get()
+            future.addListener(
+                {
+                    if (!disposed) {
+                        try {
+                            val cameraProvider = future.get()
                             val preview = Preview.Builder().build().also {
                                 it.surfaceProvider = previewView.surfaceProvider
                             }
-                            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
-                            try {
-                                cameraProvider.unbindAll()
-                                cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    cameraSelector,
-                                    preview,
-                                    imageCapture
-                                )
-                            } catch (_: Exception) {}
-                        }, ContextCompat.getMainExecutor(context))
+                            provider = cameraProvider
+                            boundPreview = preview
+                            imageCapture.flashMode =
+                                ImageCapture.FLASH_MODE_OFF
+
+                            camera = cameraProvider.bindToLifecycle(
+                                lifecycleOwner,
+                                CameraSelector.DEFAULT_BACK_CAMERA,
+                                preview,
+                                imageCapture
+                            )
+
+                            cameraReady = true
+                        } catch (exception: Exception) {
+                            cameraReady = false
+
+                            Toast.makeText(
+                                context,
+                                "Không thể mở camera: " +
+                                        (exception.localizedMessage ?: "Lỗi thiết bị"),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
-                )
+                },
+                mainExecutor
+            )
+        }
+
+        onDispose {
+            disposed = true
+
+            boundPreview?.let { preview ->
+                provider?.unbind(preview, imageCapture)
+            }
+
+            camera = null
+            cameraReady = false
+        }
+    }
+
+    fun capturePhoto() {
+        if (!hasPermission) {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+            return
+        }
+
+        if (!cameraReady || isCapturing) return
+
+        val hasFlash = camera?.cameraInfo?.hasFlashUnit() == true
+
+        imageCapture.flashMode =
+            if (flashEnabled && hasFlash) {
+                ImageCapture.FLASH_MODE_ON
             } else {
-                Image(
-                    painter = painterResource(id = R.drawable.sample_medicine_box),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                ImageCapture.FLASH_MODE_OFF
+            }
+
+        val photoFile = File(
+            context.cacheDir,
+            "medicine_${System.currentTimeMillis()}.jpg"
+        )
+
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(
+            photoFile
+        ).build()
+
+        isCapturing = true
+
+        imageCapture.takePicture(
+            outputOptions,
+            mainExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(
+                    outputFileResults: ImageCapture.OutputFileResults
+                ) {
+                    isCapturing = false
+                    onCaptureClick(Uri.fromFile(photoFile))
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    isCapturing = false
+                    photoFile.delete()
+
+                    Toast.makeText(
+                        context,
+                        "Chụp ảnh thất bại: ${exception.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        )
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFF0F201C))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x33FFFFFF))
+                    .clickable(onClick = onCloseClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "✕",
+                    color = Color.White,
+                    fontSize = 22.sp
                 )
             }
 
-            // Lớp phủ tối mờ toàn màn hình camera
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.2f))
+            Text(
+                text = "Quét vỏ hộp thuốc",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
             )
 
-            // Layout nội dung đè lên Camera
-            Column(
+            Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceEvenly
-            ) {
-                // 1. Hộp hướng dẫn bo góc ở đỉnh
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = Color(0xFF19352E).copy(alpha = 0.92f)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Badge "GIỮ MÁY ỔN ĐỊNH"
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = LightMint
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_scan),
-                                    contentDescription = null,
-                                    tint = PrimaryTeal,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = "GIỮ MÁY ỔN ĐỊNH",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = PrimaryTeal
-                                )
-                            }
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (flashEnabled) Color(0xFF126B62)
+                        else Color(0x33FFFFFF)
+                    )
+                    .clickable {
+                        if (camera?.cameraInfo?.hasFlashUnit() == true) {
+                            flashEnabled = !flashEnabled
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Camera chưa sẵn sàng hoặc không có đèn flash.",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "⚡",
+                    color = if (flashEnabled) Color(0xFFFACC15)
+                    else Color.White,
+                    fontSize = 22.sp
+                )
+            }
+        }
 
-                        Text(
-                            text = "Đặt toàn bộ mặt trước vỏ hộp vào khung",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (hasPermission) {
+                AndroidView(
+                    factory = { previewView },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(20.dp))
+                )
 
-                // 2. Khung ngắm chính viền trắng
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.9f)
-                        .height(310.dp)
-                        .border(2.5.dp, Color.White, RoundedCornerShape(24.dp)),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth(0.88f)
+                        .height(220.dp)
+                        .border(
+                            width = 2.dp,
+                            color = Color.White.copy(alpha = 0.85f),
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                )
+
+                if (!cameraReady) {
+                    CircularProgressIndicator(color = Color.White)
+                }
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    // Đường kẻ ngang trung tâm
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.85f)
-                            .height(1.5.dp)
-                            .background(Color.White.copy(alpha = 0.85f))
+                    Text(
+                        text = "Cần quyền camera để quét thuốc",
+                        color = Color.White,
+                        textAlign = TextAlign.Center
                     )
 
-                    // 4 gạch ngang bo tròn ở 4 góc bên trong khung ngắm
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 14.dp, vertical = 14.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .width(36.dp)
-                                .height(6.dp)
-                                .background(LightMint, CircleShape)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .width(36.dp)
-                                .height(6.dp)
-                                .background(LightMint, CircleShape)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .width(36.dp)
-                                .height(6.dp)
-                                .background(LightMint, CircleShape)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .width(36.dp)
-                                .height(6.dp)
-                                .background(LightMint, CircleShape)
-                        )
-                    }
-                }
+                    Spacer(Modifier.height(12.dp))
 
-                // 3. Badge "Đủ sáng • Không bị lóa"
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = Color(0xFF19352E)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Button(
+                        onClick = {
+                            permissionLauncher.launch(
+                                Manifest.permission.CAMERA
+                            )
+                        }
                     ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_sun),
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "Đủ sáng • Không bị lóa",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White
-                        )
+                        Text("Cấp quyền camera")
                     }
                 }
             }
         }
 
-        // --- 3. BẢNG ĐIỀU KHIỂN ĐÁY (WHITE SHEET) ---
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
-            color = Color(0xFFF8FAF9)
+            shape = RoundedCornerShape(
+                topStart = 28.dp,
+                topEnd = 28.dp
+            ),
+            color = Color.White
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 22.dp),
+                    .padding(horizontal = 24.dp, vertical = 18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Nút chụp ảnh dạng vòng tròn đôi
+                Text(
+                    text = "Đặt mặt trước vỏ hộp vào khung",
+                    color = Color(0xFF31534A),
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center
+                )
+
                 Box(
                     modifier = Modifier
-                        .size(74.dp)
+                        .size(76.dp)
                         .clip(CircleShape)
-                        .border(3.5.dp, PrimaryTeal, CircleShape)
-                        .clickable { onCaptureClick() }
-                        .padding(5.dp)
-                        .background(PrimaryTeal, CircleShape),
+                        .border(
+                            width = 4.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = CircleShape
+                        )
+                        .clickable(
+                            enabled = cameraReady && !isCapturing,
+                            onClickLabel = "Chụp ảnh thuốc",
+                            onClick = { capturePhoto() }
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_camera),
-                        contentDescription = "Chụp ảnh",
-                        tint = Color.White,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-
-                // Nút 1: Nhập thông tin thủ công
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onManualInputClick() }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_keyboard),
-                        contentDescription = null,
-                        tint = Color(0xFF334155),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Nhập thông tin thủ công",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF334155)
-                    )
-                }
-
-                // Nút 2: Hoặc chọn ảnh từ thư viện
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isCapturing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = "Chụp ảnh",
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
                             )
                         }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_image),
-                        contentDescription = null,
-                        tint = Color(0xFF334155),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Hoặc chọn ảnh từ thư viện",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF334155)
-                    )
+                    }
+                }
+
+                TextButton(onClick = onManualInputClick) {
+                    Text("Nhập thông tin thủ công")
+                }
+
+                TextButton(onClick = onPickImageClick) {
+                    Text("Hoặc chọn ảnh từ thư viện")
                 }
             }
         }
-
-        // --- 4. DẢI NỀN XANH ĐẬM DƯỚI CÙNG ---
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(40.dp)
-                .background(DarkTealBg)
-        )
     }
-}
-
-@ComposePreview(showBackground = true, heightDp = 892, widthDp = 412)
-@Composable
-fun ScanCameraScreenPreview() {
-    ScanCameraScreen()
 }
