@@ -1,34 +1,15 @@
+
 package com.example.dattcnpm.ui.screens.account
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -41,15 +22,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.dattcnpm.R
 import com.example.dattcnpm.data.model.UserProfileManager
+import com.example.dattcnpm.data.remote.UserProfileRepository
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @Composable
 fun EditNameScreen(
     modifier: Modifier = Modifier,
     onBackClick: () -> Unit = {},
     onSaveSuccess: () -> Unit = {},
-    onCancelClick: () -> Unit = {},
+    onCancelClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     val primaryColor = Color(0xFF0F5B51)
     val lightBgColor = Color(0xFFE0F0EC)
     val darkTextColor = Color(0xFF0A3C35)
@@ -57,121 +44,229 @@ fun EditNameScreen(
     val borderColor = Color(0xFFE2E8E6)
     val infoBgColor = Color(0xFFEFF6F4)
 
-    var nameInput by remember { mutableStateOf(UserProfileManager.name) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var nameInput by remember {
+        mutableStateOf(UserProfileManager.name)
+    }
+
+    var errorMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var isSaving by remember {
+        mutableStateOf(false)
+    }
+
+    val saveName: () -> Unit = save@{
+        if (isSaving) return@save
+
+        val trimmedName = nameInput.trim()
+
+        if (trimmedName.isBlank()) {
+            errorMessage = "Vui lòng nhập họ và tên."
+            return@save
+        }
+
+        if (trimmedName.length > 100) {
+            errorMessage = "Họ và tên không được quá 100 ký tự."
+            return@save
+        }
+
+        val uid = FirebaseAuth.getInstance()
+            .currentUser?.uid
+
+        if (uid.isNullOrBlank()) {
+            errorMessage =
+                "Phiên đăng nhập đã kết thúc. Vui lòng đăng nhập lại."
+            return@save
+        }
+
+        isSaving = true
+        errorMessage = null
+
+        scope.launch {
+            try {
+                // Bước 1: Lưu tên mới lên Firestore.
+                UserProfileRepository.updateProfile(
+                    uid = uid,
+                    updates = mapOf(
+                        "displayName" to trimmedName
+                    )
+                )
+
+                // Bước 2: Đảm bảo tài khoản chưa thay đổi.
+                check(
+                    FirebaseAuth.getInstance()
+                        .currentUser?.uid == uid
+                ) {
+                    "Tài khoản đã thay đổi. Vui lòng mở lại hồ sơ."
+                }
+
+                // Bước 3: Cập nhật dữ liệu trên điện thoại.
+                UserProfileManager.init(context)
+                UserProfileManager.name = trimmedName
+                UserProfileManager.saveProfileInfo(context)
+
+                // Bước 4: Trở về màn Account.
+                onSaveSuccess()
+
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                errorMessage = when {
+                    error.message?.contains(
+                        "PERMISSION_DENIED",
+                        ignoreCase = true
+                    ) == true ->
+                        "Không có quyền cập nhật hồ sơ. " +
+                                "Vui lòng kiểm tra Firestore Rules."
+
+                    error.message?.contains(
+                        "UNAVAILABLE",
+                        ignoreCase = true
+                    ) == true ->
+                        "Chưa kết nối được Firestore. " +
+                                "Vui lòng kiểm tra Internet."
+
+                    else ->
+                        "Chưa lưu được tên. " +
+                                "Vui lòng kiểm tra kết nối và thử lại."
+                }
+            } finally {
+                isSaving = false
+            }
+        }
+    }
 
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = Color(0xFFFAFDFB),
+        color = Color(0xFFFAFDFB)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+                .imePadding()
+                .padding(
+                    horizontal = 24.dp,
+                    vertical = 16.dp
+                )
         ) {
+
             // Header
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Surface(
                     shape = CircleShape,
                     color = lightBgColor,
                     modifier = Modifier
                         .size(44.dp)
-                        .clickable { onBackClick() },
+                        .clickable(enabled = !isSaving) {
+                            onBackClick()
+                        }
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize()
                     ) {
                         Icon(
-                            painter = painterResource(id = R.drawable.ic_back),
-                            contentDescription = stringResource(id = R.string.cd_back_button),
+                            painter = painterResource(
+                                R.drawable.ic_back
+                            ),
+                            contentDescription = "Quay lại",
                             tint = primaryColor,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(Modifier.width(16.dp))
 
                 Column {
                     Text(
-                        text = stringResource(id = R.string.account_edit_name),
+                        text = stringResource(
+                            R.string.account_edit_name
+                        ),
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color = darkTextColor,
+                        color = darkTextColor
                     )
+
                     Text(
-                        text = stringResource(id = R.string.account_section_personal),
+                        text = stringResource(
+                            R.string.account_section_personal
+                        ),
                         fontSize = 13.sp,
-                        color = subTextColor,
+                        color = subTextColor
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(Modifier.height(24.dp))
 
-            // Icon Badge
+            // Icon
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = lightBgColor,
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(56.dp)
             ) {
                 Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        painter = painterResource(id = R.drawable.ic_user),
+                        painter = painterResource(
+                            R.drawable.ic_user
+                        ),
                         contentDescription = null,
                         tint = primaryColor,
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(Modifier.height(20.dp))
 
             Text(
                 text = "Tên của bạn",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
-                color = darkTextColor,
+                color = darkTextColor
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
 
             Text(
                 text = "Tên giúp người thân nhận ra bạn trong MMRA.",
                 fontSize = 14.sp,
-                color = subTextColor,
+                color = subTextColor
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(Modifier.height(20.dp))
 
             // Input Card
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = Color.White,
-                border = BorderStroke(1.dp, borderColor),
-                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(
+                    1.dp,
+                    borderColor
+                ),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.padding(16.dp)
                 ) {
                     Text(
-                        text = stringResource(id = R.string.label_fullname),
+                        text = stringResource(
+                            R.string.label_fullname
+                        ),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = darkTextColor,
+                        color = darkTextColor
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = nameInput,
@@ -179,123 +274,140 @@ fun EditNameScreen(
                             nameInput = it
                             errorMessage = null
                         },
+                        enabled = !isSaving,
                         placeholder = {
                             Text(
-                                text = stringResource(id = R.string.hint_fullname),
-                                color = Color.Gray,
+                                text = stringResource(
+                                    R.string.hint_fullname
+                                ),
+                                color = Color.Gray
                             )
                         },
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             unfocusedBorderColor = borderColor,
-                            focusedBorderColor = primaryColor,
+                            focusedBorderColor = primaryColor
                         ),
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth()
                     )
 
-                    if (errorMessage != null) {
-                        Spacer(modifier = Modifier.height(4.dp))
+                    errorMessage?.let { message ->
+                        Spacer(Modifier.height(8.dp))
+
                         Text(
-                            text = errorMessage!!,
-                            fontSize = 12.sp,
-                            color = Color(0xFFD32F2F),
+                            text = message,
+                            fontSize = 13.sp,
+                            color = Color(0xFFD32F2F)
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
 
                     Text(
                         text = "Nhập đầy đủ họ và tên của bạn.",
                         fontSize = 12.sp,
-                        color = subTextColor,
+                        color = subTextColor
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(Modifier.height(24.dp))
 
-            // Primary Button: Lưu thay đổi
+            // Save Button
             Button(
-                onClick = {
-                    val trimmedName = nameInput.trim()
-                    if (trimmedName.isEmpty()) {
-                        errorMessage = "Vui lòng nhập họ và tên của bạn."
-                    } else {
-                        UserProfileManager.name = trimmedName
-                        UserProfileManager.saveProfileInfo(context)
-                        onSaveSuccess()
-                    }
-                },
+                onClick = saveName,
+                enabled = !isSaving,
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primaryColor
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(52.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+
+                    Spacer(Modifier.width(10.dp))
+
+                    Text("Đang lưu...")
+                } else {
                     Icon(
-                        painter = painterResource(id = R.drawable.ic_check_circle),
+                        painter = painterResource(
+                            R.drawable.ic_check_circle
+                        ),
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(20.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Spacer(Modifier.width(8.dp))
+
                     Text(
                         text = "Lưu thay đổi",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = Color.White
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
             Text(
-                text = stringResource(id = R.string.avatar_action_cancel),
+                text = stringResource(
+                    R.string.avatar_action_cancel
+                ),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = subTextColor,
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
-                    .clickable { onCancelClick() },
+                    .clickable(enabled = !isSaving) {
+                        onCancelClick()
+                    }
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(Modifier.height(24.dp))
 
             // Info Box
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = infoBgColor,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.Top,
+                    verticalAlignment = Alignment.Top
                 ) {
                     Icon(
-                        painter = painterResource(id = R.drawable.ic_info_circle),
+                        painter = painterResource(
+                            R.drawable.ic_info_circle
+                        ),
                         contentDescription = null,
                         tint = primaryColor,
-                        modifier = Modifier
-                            .size(18.dp)
-                            .padding(top = 2.dp),
+                        modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Spacer(Modifier.width(10.dp))
+
                     Text(
-                        text = "Thay đổi tên không ảnh hưởng đến lịch uống thuốc của bạn.",
+                        text = "Tên mới được đồng bộ với hồ sơ " +
+                                "Firebase của bạn. Thay đổi tên " +
+                                "không ảnh hưởng đến lịch uống thuốc.",
                         fontSize = 13.sp,
                         color = subTextColor,
-                        lineHeight = 18.sp,
+                        lineHeight = 18.sp
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
