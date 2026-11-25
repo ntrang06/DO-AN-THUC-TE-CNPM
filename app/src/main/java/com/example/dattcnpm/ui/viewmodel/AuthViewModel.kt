@@ -2,6 +2,7 @@
 package com.example.dattcnpm.ui.viewmodel
 
 import android.app.Activity
+import android.util.Log
 import android.content.Context
 import android.content.ContextWrapper
 import android.util.Patterns
@@ -43,6 +44,32 @@ class AuthViewModel : ViewModel() {
 
     val isLoggedIn: Boolean
         get() = AuthRepository.isLoggedIn()
+
+    private suspend fun checkFirebaseIdToken() {
+        try {
+            val token = AuthRepository.getFirebaseIdToken()
+
+            Log.d(
+                "MMRA_AUTH",
+                "UID: ${AuthRepository.currentUid}"
+            )
+
+            Log.d(
+                "MMRA_AUTH",
+                "Firebase ID Token available: ${token.isNotBlank()}"
+            )
+
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+
+        } catch (error: Exception) {
+            Log.e(
+                "MMRA_AUTH",
+                "Cannot get Firebase ID Token",
+                error
+            )
+        }
+    }
 
     fun clearError() {
         errorMessage = null
@@ -105,6 +132,7 @@ class AuthViewModel : ViewModel() {
                 check(AuthRepository.currentUid == user.uid) {
                     "Phiên đăng nhập đã thay đổi."
                 }
+                checkFirebaseIdToken()
 
                 saveLocalProfile(
                     context,
@@ -206,6 +234,7 @@ class AuthViewModel : ViewModel() {
                 check(AuthRepository.currentUid == user.uid) {
                     "Phiên đăng nhập đã thay đổi."
                 }
+                checkFirebaseIdToken()
 
                 saveLocalProfile(
                     context,
@@ -348,6 +377,7 @@ class AuthViewModel : ViewModel() {
                 check(AuthRepository.currentUid == user.uid) {
                     "Phiên đăng nhập đã thay đổi."
                 }
+                checkFirebaseIdToken()
 
                 saveLocalProfile(
                     context,

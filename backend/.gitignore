@@ -1,0 +1,25 @@
+# Environment
+.env
+
+# Virtual environment
+.venv/
+
+# Firebase credentials
+secrets/
+*.pem
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Test cache
+.pytest_cache/
+
+# Python virtual environment
+.venv/
+
+# Environment variables
+.env
+
+# Firebase service account credentials
+secrets/
