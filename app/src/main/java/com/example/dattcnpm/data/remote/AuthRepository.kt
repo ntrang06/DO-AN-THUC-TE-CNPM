@@ -17,6 +17,27 @@ object AuthRepository {
     val currentUid: String?
         get() = auth.currentUser?.uid
 
+    /**
+     * Lấy Firebase ID Token của tài khoản đang đăng nhập.
+     *
+     * Token này được gửi đến FastAPI Backend để xác minh danh tính.
+     */
+    suspend fun getFirebaseIdToken(
+        forceRefresh: Boolean = false
+    ): String {
+        val user = auth.currentUser
+            ?: throw IllegalStateException(
+                "Người dùng chưa đăng nhập Firebase."
+            )
+
+        return user.getIdToken(forceRefresh)
+            .await()
+            .token
+            ?: throw IllegalStateException(
+                "Không thể lấy Firebase ID Token."
+            )
+    }
+
     suspend fun signUp(
         email: String,
         password: String
